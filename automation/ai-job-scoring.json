@@ -1,6 +1,6 @@
 [
   {
-    "updatedAt": "2026-08-27T12:26:11.064Z",
+    "updatedAt": "2026-08-27T15:17:40.457Z",
     "createdAt": "2026-08-26T15:39:46.370Z",
     "id": "AIJobScoringMock1",
     "name": "JobHunter - AI Job Scoring",
@@ -85,7 +85,7 @@
           "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{$env.GEMINI_MODEL.split('=').pop().trim().replace(/^models\\//, '')}}:generateContent?key={{$env.GEMINI_API_KEY}}",
           "sendBody": true,
           "specifyBody": "json",
-          "jsonBody": "={{ { contents: [{ parts: [{ text: JSON.stringify($json.gemini_input) }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } } }}",
+          "jsonBody": "={{ { contents: [{ parts: [{ text: JSON.stringify($json.gemini_input) }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2, thinkingConfig: { thinkingBudget: 0 } } } }}",
           "options": {
             "timeout": 30000,
             "response": {
@@ -414,8 +414,8 @@
     "meta": null,
     "nodeGroups": [],
     "pinData": {},
-    "versionId": "418d686d-90d4-4df8-b70d-445fb8a7f847",
-    "activeVersionId": "418d686d-90d4-4df8-b70d-445fb8a7f847",
+    "versionId": "1b350de0-99b0-46b1-9e31-43cec99b2c3c",
+    "activeVersionId": "1b350de0-99b0-46b1-9e31-43cec99b2c3c",
     "versionCounter": 4,
     "triggerCount": 0,
     "sourceWorkflowId": null,
