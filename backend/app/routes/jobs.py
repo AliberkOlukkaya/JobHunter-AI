@@ -7,9 +7,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..jooble import JoobleAPIError, resolve_jooble_job_url
 from ..linkedin import canonicalize_linkedin_job_url
 from ..models import Job
-from ..schemas import JobResponse, LinkedInJobImport, LinkedInJobImportResponse, StatsResponse
+from ..schemas import JobLinkResponse, JobResponse, LinkedInJobImport, LinkedInJobImportResponse, StatsResponse
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 Recommendation = Literal["strong_apply", "apply", "maybe", "skip"]
@@ -95,6 +96,26 @@ def get_job(job_id: int, db: Annotated[Session, Depends(get_db)]) -> Job:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.get("/jobs/{job_id}/resolve-link", response_model=JobLinkResponse)
+def resolve_job_link(job_id: int, db: Annotated[Session, Depends(get_db)]) -> JobLinkResponse:
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    source = job.source or "Unknown"
+    if source.casefold() != "jooble":
+        return JobLinkResponse(status="resolved", url=job.source_url, source=source) if job.source_url else JobLinkResponse(status="unavailable", url=None, source=source)
+
+    try:
+        resolution = resolve_jooble_job_url(job)
+    except JoobleAPIError as exc:
+        raise HTTPException(status_code=503, detail="Jooble link resolution is temporarily unavailable") from exc
+    if resolution.status == "resolved" and resolution.url and resolution.url != job.source_url:
+        job.source_url = resolution.url
+        job.updated_at = datetime.now(UTC)
+        db.commit()
+    return JobLinkResponse(status=resolution.status, url=resolution.url, source=resolution.source)
 
 
 @router.get("/stats", response_model=StatsResponse)

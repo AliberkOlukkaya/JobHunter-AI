@@ -47,6 +47,12 @@ class JobResponse(BaseModel):
         return value or []
 
 
+class JobLinkResponse(BaseModel):
+    status: Literal["resolved", "unavailable"]
+    url: str | None = None
+    source: str
+
+
 class StatsResponse(BaseModel):
     total_jobs: int
     strong_apply: int

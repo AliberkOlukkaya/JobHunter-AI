@@ -220,6 +220,22 @@ def test_provider_source_urls_are_preserved():
         assert response.source_url == url
 
 
+def test_linkedin_and_remotive_resolve_link_directly():
+    now = datetime.now(UTC)
+    jobs = [
+        Job(id=201, title="LinkedIn Job", company="Example", source="LinkedIn", source_url="https://www.linkedin.com/jobs/view/1234567890/", discovered_at=now, created_at=now, updated_at=now),
+        Job(id=202, title="Remotive Job", company="Example", source="Remotive", source_url="https://remotive.com/remote-jobs/software-dev/python-engineer-123", discovered_at=now, created_at=now, updated_at=now),
+    ]
+    with Session(engine) as session:
+        session.add_all(jobs)
+        session.commit()
+
+    linkedin = client.get("/api/jobs/201/resolve-link")
+    remotive = client.get("/api/jobs/202/resolve-link")
+    assert linkedin.json() == {"status": "resolved", "url": "https://www.linkedin.com/jobs/view/1234567890/", "source": "LinkedIn"}
+    assert remotive.json() == {"status": "resolved", "url": "https://remotive.com/remote-jobs/software-dev/python-engineer-123", "source": "Remotive"}
+
+
 def test_html_entities_decoded_and_html_removed():
     value = "<p>Python &amp; SQL&nbsp;role</p><script>alert('x')</script><p>Next &#39;step&#39;</p>"
     assert clean_display_text(value, multiline=True) == "Python & SQL role\nNext 'step'"
