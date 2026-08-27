@@ -67,11 +67,33 @@ function label(value: string | null) {
   return value ? value.replaceAll("_", " ") : "unanalyzed";
 }
 
+function formatScore(value: number | null) {
+  return value ?? "—";
+}
+
+function formatSource(value: string | null) {
+  return value?.trim() || "Unknown source";
+}
+
+function formatPostedDate(value: string | null) {
+  if (!value) return "Date unavailable";
+  const posted = new Date(value);
+  if (Number.isNaN(posted.getTime())) return "Date unavailable";
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const postedDay = Date.UTC(posted.getFullYear(), posted.getMonth(), posted.getDate());
+  const days = Math.floor((today - postedDay) / 86_400_000);
+  if (days === 0) return "Posted today";
+  if (days === 1) return "Posted yesterday";
+  if (days > 1 && days < 7) return `Posted ${days} days ago`;
+  return `Posted ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(posted)}`;
+}
+
 function validListingUrl(value: string | null): string | null {
-  if (!value) return null;
+  if (!value || value !== value.trim()) return null;
   try {
     const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? value : null;
   } catch { return null; }
 }
 
@@ -200,63 +222,31 @@ export default function Dashboard() {
       <div className="mx-auto max-w-[1500px] px-5 py-6 md:px-10 md:py-8">
         {actionError && <p className="mb-5 border-l-2 border-red-400 pl-3 text-sm text-red-200" role="alert">{actionError}</p>}
         <div className={activeView === "jobs" ? "block" : "hidden"}>
-        <section className="grid grid-cols-2 border-y border-white/10 md:grid-cols-4" aria-label="Job statistics">
+        <section className="grid grid-cols-2 border-b border-white/10 md:grid-cols-4" aria-label="Job statistics">
           {[
-            ["Total Jobs", stats?.total_jobs ?? "—"],
+            ["Jobs", stats?.total_jobs ?? "—"],
             ["Strong Matches", stats?.strong_apply ?? "—"],
             ["Applications", applications.length],
-            ["Average Score", stats?.average_score ?? "—"],
+            ["Avg Score", stats?.average_score ?? "—"],
           ].map(([name, value]) => (
-            <div key={name} className="border-white/10 px-3 py-5 odd:border-r md:border-r md:px-6 md:last:border-r-0">
+            <div key={name} className="border-white/10 px-3 py-3 odd:border-r md:border-r md:px-5 md:last:border-r-0">
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">{name}</p>
-              <p className="mt-2 text-3xl font-semibold tracking-tight text-white">{value}</p>
+              <p className="mt-1 text-xl font-semibold tracking-tight text-white">{value}</p>
             </div>
           ))}
         </section>
 
-        <section className="digest-section mt-6 border-b border-white/10 pb-5" aria-labelledby="digest-title">
-          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
+        {digest && <section className="digest-section mt-4 border-b border-white/10 pb-4" aria-labelledby="digest-title">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-mint">Daily automation</p>
-              <h2 id="digest-title" className="mt-1 text-lg font-semibold tracking-tight">Today&apos;s Job Digest</h2>
+              <h2 id="digest-title" className="text-sm font-semibold text-white">Today&apos;s Digest</h2>
+              <p className="mt-1 text-xs text-slate-400">{digest.total_new_jobs} new · {digest.strong_apply_count} strong · {digest.apply_count} apply · {digest.maybe_count} maybe</p>
             </div>
-            {digest && <p className="font-mono text-xs text-slate-500">{digest.digest_date}</p>}
+            {digest.top_jobs.length > 0 && <ol className="flex min-w-0 flex-col gap-1 text-xs sm:flex-row sm:gap-4">
+              {digest.top_jobs.slice(0, 3).map((job) => <li key={job.id} className="min-w-0 text-slate-400"><span className="font-mono text-mint">{job.match_score}</span> <span className="truncate">{job.title}</span></li>)}
+            </ol>}
           </div>
-
-          {!loading && !digest ? (
-            <p className="mt-6 text-sm text-slate-400">No daily digest generated yet.</p>
-          ) : digest ? (
-            <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(320px,.7fr)_1.4fr]">
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 lg:grid-cols-2">
-                {[
-                  ["New jobs", digest.total_new_jobs],
-                  ["Strong apply", digest.strong_apply_count],
-                  ["Apply", digest.apply_count],
-                  ["Maybe", digest.maybe_count],
-                ].map(([name, value]) => (
-                  <div key={name} className="border-l border-white/10 pl-4">
-                    <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{name}</dt>
-                    <dd className="mt-1 text-xl font-semibold text-white">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <div>
-                <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Top matches</h3>
-                {digest.top_jobs.length ? (
-                  <ol className="mt-2 divide-y divide-white/10">
-                    {digest.top_jobs.map((job) => (
-                      <li key={job.id} className="digest-row grid grid-cols-[44px_1fr_auto] items-center gap-3 py-3">
-                        <span className="font-mono text-lg text-mint">{job.match_score}</span>
-                        <span className="min-w-0"><strong className="block truncate text-sm font-medium text-white">{job.title}</strong><span className="text-xs text-slate-500">{job.company}</span></span>
-                        {validListingUrl(job.source_url) && <a className="text-xs text-slate-400 hover:text-mint" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer" aria-label={`Open ${job.title}`}>Open ↗</a>}
-                      </li>
-                    ))}
-                  </ol>
-                ) : <p className="mt-3 text-sm text-slate-400">No ranked matches in this digest.</p>}
-              </div>
-            </div>
-          ) : null}
-        </section>
+        </section>}
 
         <section className="mt-6 overflow-hidden rounded-[2px] bg-paper text-slate-900 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
           <div className="border-b border-slate-200 px-5 py-5 md:px-7">
@@ -282,29 +272,30 @@ export default function Dashboard() {
               </select>
               <div className="flex gap-2">
                 <button className="bg-ink px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700" type="submit">Filter</button>
-                <button className="px-3 py-3 text-sm text-slate-500 hover:text-slate-900" type="button" onClick={resetFilters}>Reset</button>
+                <button className="px-3 py-3 text-sm text-slate-500 hover:text-slate-900" type="button" onClick={resetFilters}>Clear filters</button>
               </div>
             </form>
           </div>
 
-          <div className="min-h-[380px]">
+          <div className="min-h-[240px]">
             {loading && <Status message="Loading jobs..." />}
             {error && <Status message="Backend unavailable." action="Retry" onAction={loadDashboard} />}
-            {!loading && !error && visibleJobs.length === 0 && <Status message="No matching jobs found." />}
+            {!loading && !error && visibleJobs.length === 0 && <Status message="No jobs match your filters." />}
             {!loading && !error && visibleJobs.map((job, index) => (
               <article key={job.id} className="job-row grid gap-4 border-b border-slate-200 px-5 py-5 last:border-b-0 md:grid-cols-[64px_minmax(0,1fr)_minmax(260px,auto)] md:items-center md:px-7" style={{animationDelay: `${index * 35}ms`}}>
-                <div><p className="metric-label">Score</p><span className="font-mono text-2xl font-semibold text-slate-950">{job.match_score ?? "—"}</span></div>
+                <div><p className="metric-label">Score</p><span className="font-mono text-2xl font-semibold text-slate-950">{formatScore(job.match_score)}</span></div>
                 <div className="min-w-0">
                   <h3 className="text-lg font-semibold tracking-tight text-slate-950">{job.title}</h3>
                   <p className="mt-1 text-sm text-slate-500">{job.company}</p>
-                  <p className="mt-2 font-mono text-[10px] uppercase tracking-wide text-slate-500">{job.city ?? "Location unknown"} · {job.work_model ?? "Unknown"} · {job.source ?? "Unknown source"}</p>
+                  <p className="mt-2 font-mono text-[10px] uppercase tracking-wide text-slate-500">{job.city ?? "Location unknown"} · {job.work_model ?? "Unknown"} · {formatSource(job.source)}</p>
+                  <p className="mt-1 text-xs text-slate-500">{formatPostedDate(job.posted_at)}</p>
                   {job.matched_skills.length > 0 && <p className="mt-2 text-xs text-teal-700">{job.matched_skills.slice(0,4).join(" · ")}{job.matched_skills.length > 4 ? ` · +${job.matched_skills.length-4}` : ""}</p>}
-                  {applicationByJob.get(job.id) && <p className="application-current mt-2 text-left">Application: {label(applicationByJob.get(job.id)!.status)}</p>}
+                  <div className="mt-2 flex flex-wrap items-center gap-2"><span className={`recommendation recommendation-${job.ai_recommendation ?? "unknown"}`}>{label(job.ai_recommendation)}</span>{applicationByJob.get(job.id) && <span className="application-current text-left">Application: {label(applicationByJob.get(job.id)!.status)}</span>}</div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 md:min-w-[260px]">
                   <button className="action-primary" onClick={() => { setSelectedId(job.id); setSelectedJob(job); }}>View</button>
-                  <button disabled={savingJobId === job.id || applicationByJob.get(job.id)?.status === "ready_to_apply"} className="quick-action" onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>{job.source === "LinkedIn" ? "Approve" : "Ready"}</button>
-                  {!job.source_url ? <button className="action-secondary" disabled>Open Listing</button> : validListingUrl(job.source_url) ? <a className="action-secondary" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer">Open Listing</a> : null}
+                  {applicationByJob.get(job.id)?.status === "applied" ? <span className="quick-action active text-center">Applied</span> : <button disabled={savingJobId === job.id || applicationByJob.get(job.id)?.status === "ready_to_apply"} className="quick-action" onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>Ready</button>}
+                  {!job.source_url ? <button className="action-secondary" disabled>Open Job</button> : validListingUrl(job.source_url) ? <a className="action-secondary" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer">Open Job</a> : null}
                 </div>
               </article>
             ))}
@@ -366,7 +357,7 @@ function JobDetail({job, application, onSaved, onDismiss, onClose}: {job: Job | 
             </div>
           </DetailSection>
           <DetailSection title="Job Description"><p className="whitespace-pre-wrap leading-7 text-slate-600">{job.description ?? "No description available."}</p></DetailSection>
-          <div className="mt-8 flex flex-wrap items-center gap-3">{validListingUrl(job.source_url) && <a className="action-primary inline-flex" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer">Open Listing ↗</a>}<button className="action-secondary" onClick={onDismiss}>Hide from list</button></div>
+          <div className="mt-8 flex flex-wrap items-center gap-3">{validListingUrl(job.source_url) && <a className="action-primary inline-flex" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer">Open Job ↗</a>}<button className="action-secondary" onClick={onDismiss}>Hide from list</button></div>
         </>}
       </aside>
     </div>

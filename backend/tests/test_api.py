@@ -39,6 +39,7 @@ client = TestClient(app)
 
 def setup_module():
     now = datetime.now(UTC)
+    posted_at = datetime(2026, 8, 25, 12, 30, tzinfo=UTC)
     with Session(engine) as session:
         session.add(
             Job(
@@ -49,6 +50,7 @@ def setup_module():
                 work_model="Remote",
                 source="Jooble",
                 description="Python and SQL",
+                posted_at=posted_at,
                 match_score=90,
                 ai_recommendation="strong_apply",
                 matched_skills=["Python", "SQL"],
@@ -82,6 +84,13 @@ def test_jobs():
     assert response.status_code == 200
     assert response.json()[0]["title"] == "Python Backend Developer"
     assert response.json()[0]["missing_skills"] == []
+    assert response.json()[0]["posted_at"] == "2026-08-25T12:30:00"
+
+
+def test_timezone_aware_posted_at_serialization():
+    posted_at = datetime(2026, 8, 25, 12, 30, tzinfo=UTC)
+    response = JobResponse(id=101, title="Data Engineer", company="Example", posted_at=posted_at)
+    assert '"posted_at":"2026-08-25T12:30:00Z"' in response.model_dump_json()
 
 
 def test_stats():
@@ -198,6 +207,17 @@ def test_jooble_original_url_preserved():
     assert preserve_source_url(url) == url
     response = JobResponse(id=99, title="Data Engineer", company="Example", source="Jooble", source_url=url)
     assert response.source_url == url
+
+
+def test_provider_source_urls_are_preserved():
+    urls = {
+        "Jooble": "https://tr.jooble.org/desc/123?ckey=Python%20Developer&pos=1",
+        "Remotive": "https://remotive.com/remote-jobs/software-dev/python-engineer-123",
+        "LinkedIn": "https://www.linkedin.com/jobs/view/1234567890/",
+    }
+    for source, url in urls.items():
+        response = JobResponse(id=100, title="Python Engineer", company="Example", source=source, source_url=url)
+        assert response.source_url == url
 
 
 def test_html_entities_decoded_and_html_removed():
