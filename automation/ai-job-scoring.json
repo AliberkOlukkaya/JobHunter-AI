@@ -1,0 +1,445 @@
+[
+  {
+    "updatedAt": "2026-08-27T12:26:11.064Z",
+    "createdAt": "2026-08-26T15:39:46.370Z",
+    "id": "AIJobScoringMock1",
+    "name": "JobHunter - AI Job Scoring",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [0, 0],
+        "id": "7807e31d-5dc0-4be9-b848-38f01d3e0ee1",
+        "name": "Manual Trigger"
+      },
+      {
+        "parameters": { "inputSource": "passthrough" },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [0, 160],
+        "id": "scoring-subworkflow-trigger",
+        "name": "Called by Daily Automation"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT id, title, company, city, work_model, description, source, source_url\nFROM public.jobs\nWHERE match_score IS NULL\nORDER BY CASE WHEN source = 'Jooble' THEN 0 ELSE 1 END, id DESC\nLIMIT 3;",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [224, 0],
+        "id": "f607f7fb-d4bb-4695-aee4-c128daea7b7b",
+        "name": "Fetch Unscored Jobs",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "read",
+          "fileSelector": "/home/node/.n8n-files/config/candidate-profile.json",
+          "options": { "dataPropertyName": "data" }
+        },
+        "type": "n8n-nodes-base.readWriteFile",
+        "typeVersion": 1.1,
+        "position": [448, 0],
+        "id": "62de6973-fc12-41bf-b2df-47ff1ecec7f6",
+        "name": "Read Candidate Profile File"
+      },
+      {
+        "parameters": {
+          "operation": "fromJson",
+          "binaryPropertyName": "data",
+          "destinationKey": "candidate_profile",
+          "options": {
+            "encoding": "utf8",
+            "stripBOM": true,
+            "keepSource": "json"
+          }
+        },
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1.1,
+        "position": [672, 0],
+        "id": "82937de4-dd27-45ed-9a3a-c1d12096f518",
+        "name": "Load Candidate Profile"
+      },
+      {
+        "parameters": {
+          "jsCode": "const profile = $json.candidate_profile;\nconst job = $('Fetch Unscored Jobs').item.json;\nconst jobData = { id: job.id, title: job.title, company: job.company, city: job.city, work_model: job.work_model, description: job.description || '' };\nconst geminiInput = {\n  instruction: 'Evaluate this job for the candidate. Return exactly one JSON object only: no markdown, code fence, commentary, or extra keys. Be conservative and do not inflate the score.',\n  scoring_rules: ['Target-role proximity and genuine engineering/data/AI/backend/software relevance.', 'Technical skill overlap and missing required skills.', 'Requested experience and junior or entry-level suitability.', 'Location preference and work model.', 'Senior, lead, principal, architect, management, sales, support, and marketing roles must not receive a high score when unsuitable.'],\n  recommendation_thresholds: { strong_apply: '85-100', apply: '70-84', maybe: '55-69', skip: '0-54' },\n  output_schema: { match_score: 'integer 0-100', recommendation: 'strong_apply | apply | maybe | skip', summary: 'non-empty concise Turkish string', matched_skills: 'string[]', missing_skills: 'string[]' },\n  candidate_profile: profile,\n  job: jobData\n};\nreturn { json: { job_id: job.id, candidate_profile: profile, job: jobData, gemini_input: geminiInput } };",
+          "mode": "runOnceForEachItem"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [896, 0],
+        "id": "151c8387-c2f2-4b49-b2b5-5f37fc74ea4d",
+        "name": "Build Gemini Input"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{$env.GEMINI_MODEL.split('=').pop().trim().replace(/^models\\//, '')}}:generateContent?key={{$env.GEMINI_API_KEY}}",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { contents: [{ parts: [{ text: JSON.stringify($json.gemini_input) }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } } }}",
+          "options": {
+            "timeout": 30000,
+            "response": {
+              "response": { "fullResponse": true, "neverError": true }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [896, -224],
+        "id": "8f1d4f1b-9804-44bb-8e0f-10d8f46f683c",
+        "name": "Gemini API",
+        "onError": "continueRegularOutput",
+        "notes": "Live Gemini request. Model and API key are read only from environment variables."
+      },
+      {
+        "parameters": {
+          "jsCode": "const base = $('Build Gemini Input').item.json;\nconst fallback = reason => ({ json: { ...base, gemini_valid: false, fallback_reason: reason, scoring_provider: 'fallback' } });\nif ($json.error) return fallback('request_error');\nconst status = Number($json.statusCode || 200);\nif (status === 429) return fallback('rate_limit_429');\nif (status >= 500) return fallback(`server_${status}`);\nif (status >= 400) return fallback(`http_${status}`);\ntry {\n  const body = $json.body || $json;\n  const text = body?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('')?.trim();\n  if (!text) return fallback('empty_response');\n  const cleaned = text.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  const result = JSON.parse(cleaned);\n  const valid = Number.isInteger(result.match_score) && result.match_score >= 0 && result.match_score <= 100 && typeof result.summary === 'string' && result.summary.trim().length > 0 && Array.isArray(result.matched_skills) && result.matched_skills.every(value => typeof value === 'string') && Array.isArray(result.missing_skills) && result.missing_skills.every(value => typeof value === 'string');\n  if (!valid) return fallback('validation_failure');\n  const score = result.match_score;\n  const recommendation = score >= 85 ? 'strong_apply' : score >= 70 ? 'apply' : score >= 55 ? 'maybe' : 'skip';\n  return { json: { ...base, ai_result: { match_score: score, recommendation, summary: result.summary.trim(), matched_skills: result.matched_skills, missing_skills: result.missing_skills }, gemini_valid: true, scoring_provider: 'gemini' } };\n} catch { return fallback('malformed_response'); }",
+          "mode": "runOnceForEachItem"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1120, -224],
+        "id": "parse-gemini-response",
+        "name": "Parse Structured JSON"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "gemini-valid-condition",
+                "leftValue": "={{ $json.gemini_valid }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1344, -224],
+        "id": "gemini-result-valid",
+        "name": "Gemini Result Valid?"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.openai.com/v1/responses",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{$env.OPENAI_API_KEY}}"
+              },
+              { "name": "Content-Type", "value": "application/json" }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { model: (($env.OPENAI_MODEL || '').split('=').pop().trim() || 'gpt-4o-mini'), store: false, input: [{ role: 'system', content: [{ type: 'input_text', text: 'Evaluate job fit conservatively. Follow the supplied rules and return only the required structured result.' }] }, { role: 'user', content: [{ type: 'input_text', text: JSON.stringify($json.gemini_input) }] }], text: { format: { type: 'json_schema', name: 'job_match', strict: true, schema: { type: 'object', additionalProperties: false, properties: { match_score: { type: 'integer', minimum: 0, maximum: 100 }, summary: { type: 'string', minLength: 1 }, matched_skills: { type: 'array', items: { type: 'string' } }, missing_skills: { type: 'array', items: { type: 'string' } } }, required: ['match_score','summary','matched_skills','missing_skills'] } } } } }}",
+          "options": {
+            "timeout": 30000,
+            "response": {
+              "response": { "fullResponse": true, "neverError": true }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [1568, 0],
+        "id": "openai-api",
+        "name": "OpenAI API",
+        "onError": "continueRegularOutput",
+        "notes": "Fallback provider. API key and optional model are read only from environment variables."
+      },
+      {
+        "parameters": {
+          "jsCode": "const base = $('Parse Structured JSON').item.json;\nconst fallback = reason => ({ json: { ...base, openai_valid: false, openai_fallback_reason: reason, scoring_provider: 'fallback' } });\nif ($json.error) return fallback('openai_request_error');\nconst status = Number($json.statusCode || 200);\nif (status === 401) return fallback('openai_auth_401');\nif (status === 429) return fallback('openai_rate_limit_429');\nif (status >= 500) return fallback(`openai_server_${status}`);\nif (status >= 400) return fallback(`openai_http_${status}`);\ntry {\n  const body = $json.body || $json;\n  const text = body?.output?.flatMap(item => item.content || []).find(item => item.type === 'output_text')?.text?.trim();\n  if (!text) return fallback('openai_empty_response');\n  const cleaned = text.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  const result = JSON.parse(cleaned);\n  const score = typeof result.match_score === 'string' && /^\\d+$/.test(result.match_score.trim()) ? Number(result.match_score) : result.match_score;\n  const valid = Number.isInteger(score) && score >= 0 && score <= 100 && typeof result.summary === 'string' && result.summary.trim().length > 0 && Array.isArray(result.matched_skills) && result.matched_skills.every(value => typeof value === 'string') && Array.isArray(result.missing_skills) && result.missing_skills.every(value => typeof value === 'string');\n  if (!valid) return fallback('openai_validation_failure');\n  const recommendation = score >= 85 ? 'strong_apply' : score >= 70 ? 'apply' : score >= 55 ? 'maybe' : 'skip';\n  return { json: { ...base, ai_result: { match_score: score, recommendation, summary: result.summary.trim(), matched_skills: result.matched_skills, missing_skills: result.missing_skills }, openai_valid: true, scoring_provider: 'openai' } };\n} catch { return fallback('openai_malformed_response'); }",
+          "mode": "runOnceForEachItem"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1792, 0],
+        "id": "parse-openai-response",
+        "name": "Parse OpenAI Response"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "openai-valid-condition",
+                "leftValue": "={{ $json.openai_valid }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [2016, 0],
+        "id": "openai-result-valid",
+        "name": "OpenAI Result Valid?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const profile = $json.candidate_profile;\nconst job = $json.job;\nconst text = `${job.title} ${job.description}`.toLowerCase();\nconst normalize = value => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();\nconst skillAliases = {\n  'Python':['python'], 'SQL':['sql'], 'PostgreSQL':['postgresql','postgres'], 'FastAPI':['fastapi'], 'Docker':['docker'],\n  'REST API':['rest api','restful api'], 'Pandas':['pandas'], 'NumPy':['numpy'], 'Machine Learning':['machine learning','ml'],\n  'Git':[' git ','git version'], 'GitHub':['github']\n};\nconst matchedSkills = profile.skills.filter(skill => (skillAliases[skill] || [skill.toLowerCase()]).some(alias => ` ${text} `.includes(alias === ' git ' ? alias : alias)));\nconst requiredSkillAliases = { 'AWS':['aws'], 'Airflow':['airflow'], 'Spark':['spark'], 'PyTorch':['pytorch'], 'TensorFlow':['tensorflow'], 'Cloud':['cloud'], 'ETL':['etl'], 'Deep Learning':['deep learning'] };\nconst candidateKnown = new Set([...profile.skills, ...profile.learning_skills].map(normalize));\nconst missingSkills = Object.entries(requiredSkillAliases).filter(([skill, aliases]) => aliases.some(alias => text.includes(alias)) && !candidateKnown.has(normalize(skill))).map(([skill]) => skill);\nconst normalizedTitle = normalize(job.title);\nconst targetRole = profile.target_roles.some(role => normalizedTitle.includes(normalize(role)));\nconst preferredLocation = profile.preferred_locations.some(location => normalize(job.city || '').includes(normalize(location)));\nconst juniorSignal = /\\b(junior|entry[ -]?level|graduate|new[ -]?grad|trainee|intern(?:ship)?)\\b/i.test(job.title);\nlet matchScore = 20 + (targetRole ? 25 : 0) + Math.min(matchedSkills.length * 7, 35) + (preferredLocation ? 10 : 0) + (juniorSignal ? 10 : 0);\nmatchScore = Math.max(0, Math.min(100, Math.round(matchScore)));\nconst recommendation = matchScore >= 85 ? 'strong_apply' : matchScore >= 70 ? 'apply' : matchScore >= 55 ? 'maybe' : 'skip';\nconst summary = `${job.title} pozisyonu aday profiliyle ${matchedSkills.length} beceri ÃƒÂ¼zerinden eÃ…Å¸leÃ…Å¸iyor; mock skor ${matchScore}/100.`;\nreturn { json: { ...$json, ai_result: { match_score: matchScore, recommendation, summary, matched_skills: matchedSkills, missing_skills: missingSkills }, scoring_mode: 'mock_deterministic' } };",
+          "mode": "runOnceForEachItem"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1120, 0],
+        "id": "e302106b-2c6a-4759-9806-c1d735534b7c",
+        "name": "Mock Gemini Analysis",
+        "notes": "Deterministic testing heuristic only; this is not production AI scoring."
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "72e15d56-eb42-4982-8534-ddc011407ab5",
+                "leftValue": "={{ Number.isInteger($json.ai_result.match_score) && $json.ai_result.match_score >= 0 && $json.ai_result.match_score <= 100 }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "a924cb49-b6ea-4c10-b650-44067c9a2506",
+                "leftValue": "={{ ['strong_apply','apply','maybe','skip'].includes($json.ai_result.recommendation) }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "fd0135a8-7a86-4c65-96aa-991673af9223",
+                "leftValue": "={{ typeof $json.ai_result.summary === 'string' && $json.ai_result.summary.trim().length > 0 }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "d3e9c4b2-07af-409a-903d-8171b22dd7f5",
+                "leftValue": "={{ Array.isArray($json.ai_result.matched_skills) && Array.isArray($json.ai_result.missing_skills) }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.3,
+        "position": [1344, 0],
+        "id": "e497e7c7-5d34-4518-91fd-35be34925257",
+        "name": "Validate AI Result"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE public.jobs\nSET match_score = $2,\n    ai_recommendation = $3,\n    ai_summary = $4,\n    matched_skills = $5::jsonb,\n    missing_skills = $6::jsonb,\n    ai_analyzed_at = CURRENT_TIMESTAMP\nWHERE id = $1\nRETURNING id, title, company, city, match_score, ai_recommendation, matched_skills, missing_skills;",
+          "options": {
+            "queryReplacement": "={{ [$json.job_id, $json.ai_result.match_score, $json.ai_result.recommendation, $json.ai_result.summary, JSON.stringify($json.ai_result.matched_skills), JSON.stringify($json.ai_result.missing_skills)] }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [1568, 0],
+        "id": "4a82f710-aada-4c69-8a30-34bd3ac9534a",
+        "name": "Update Job",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      },
+      {
+        "parameters": { "maxItems": 1 },
+        "type": "n8n-nodes-base.limit",
+        "typeVersion": 1,
+        "position": [1792, 0],
+        "id": "fc93d89a-1dd9-449d-9868-bc087c834e34",
+        "name": "Run Ranking Once"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT title, company, city, match_score, ai_recommendation AS recommendation, matched_skills, missing_skills\nFROM public.jobs\nWHERE match_score IS NOT NULL\nORDER BY match_score DESC, id DESC\nLIMIT 10;",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [2016, 0],
+        "id": "803705f3-e775-4b62-866d-501b7f15b58f",
+        "name": "Final Ranking",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      }
+    ],
+    "connections": {
+      "Called by Daily Automation": {
+        "main": [
+          [{ "node": "Fetch Unscored Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Manual Trigger": {
+        "main": [
+          [{ "node": "Fetch Unscored Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Fetch Unscored Jobs": {
+        "main": [
+          [
+            {
+              "node": "Read Candidate Profile File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Read Candidate Profile File": {
+        "main": [
+          [{ "node": "Load Candidate Profile", "type": "main", "index": 0 }]
+        ]
+      },
+      "Load Candidate Profile": {
+        "main": [[{ "node": "Build Gemini Input", "type": "main", "index": 0 }]]
+      },
+      "Build Gemini Input": {
+        "main": [[{ "node": "Gemini API", "type": "main", "index": 0 }]]
+      },
+      "Gemini API": {
+        "main": [
+          [{ "node": "Parse Structured JSON", "type": "main", "index": 0 }]
+        ]
+      },
+      "Parse Structured JSON": {
+        "main": [
+          [{ "node": "Gemini Result Valid?", "type": "main", "index": 0 }]
+        ]
+      },
+      "Gemini Result Valid?": {
+        "main": [
+          [{ "node": "Validate AI Result", "type": "main", "index": 0 }],
+          [{ "node": "OpenAI API", "type": "main", "index": 0 }]
+        ]
+      },
+      "OpenAI API": {
+        "main": [
+          [{ "node": "Parse OpenAI Response", "type": "main", "index": 0 }]
+        ]
+      },
+      "Parse OpenAI Response": {
+        "main": [
+          [{ "node": "OpenAI Result Valid?", "type": "main", "index": 0 }]
+        ]
+      },
+      "OpenAI Result Valid?": {
+        "main": [
+          [{ "node": "Validate AI Result", "type": "main", "index": 0 }],
+          [{ "node": "Mock Gemini Analysis", "type": "main", "index": 0 }]
+        ]
+      },
+      "Mock Gemini Analysis": {
+        "main": [[{ "node": "Validate AI Result", "type": "main", "index": 0 }]]
+      },
+      "Validate AI Result": {
+        "main": [[{ "node": "Update Job", "type": "main", "index": 0 }]]
+      },
+      "Update Job": {
+        "main": [[{ "node": "Run Ranking Once", "type": "main", "index": 0 }]]
+      },
+      "Run Ranking Once": {
+        "main": [[{ "node": "Final Ranking", "type": "main", "index": 0 }]]
+      }
+    },
+    "settings": { "executionOrder": "v1" },
+    "staticData": null,
+    "meta": null,
+    "nodeGroups": [],
+    "pinData": {},
+    "versionId": "418d686d-90d4-4df8-b70d-445fb8a7f847",
+    "activeVersionId": "418d686d-90d4-4df8-b70d-445fb8a7f847",
+    "versionCounter": 4,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-08-26T15:39:46.370Z",
+        "createdAt": "2026-08-26T15:39:46.370Z",
+        "role": "workflow:owner",
+        "workflowId": "AIJobScoringMock1",
+        "projectId": "42IjbYSnuzn0Glt0",
+        "project": {
+          "updatedAt": "2026-08-26T11:24:11.062Z",
+          "createdAt": "2026-08-26T11:23:24.390Z",
+          "id": "42IjbYSnuzn0Glt0",
+          "name": "aliberk olukkaya <aliberk1282@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "9657b503-8fae-409e-920a-733dd623beb1"
+        }
+      }
+    ],
+    "versionMetadata": { "name": null, "description": null }
+  }
+]

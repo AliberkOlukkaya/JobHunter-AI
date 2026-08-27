@@ -1,0 +1,43 @@
+{
+  "target_roles": [
+    "Data Engineer",
+    "AI Engineer",
+    "Machine Learning Engineer",
+    "Python Backend Developer",
+    "Data Analyst",
+    "Software Engineer"
+  ],
+  "skills": [
+    "Python",
+    "SQL",
+    "PostgreSQL",
+    "FastAPI",
+    "Docker",
+    "REST API",
+    "Pandas",
+    "NumPy",
+    "Machine Learning",
+    "Git",
+    "GitHub"
+  ],
+  "learning_skills": [
+    "Data Engineering",
+    "Machine Learning",
+    "Deep Learning",
+    "Cloud",
+    "ETL"
+  ],
+  "preferred_locations": [
+    "Ankara",
+    "İstanbul",
+    "İzmir",
+    "Bursa",
+    "Kocaeli",
+    "Remote"
+  ],
+  "career_level": [
+    "junior",
+    "entry-level",
+    "graduate"
+  ]
+}

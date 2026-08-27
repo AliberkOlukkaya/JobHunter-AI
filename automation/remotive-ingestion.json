@@ -1,0 +1,315 @@
+[
+  {
+    "updatedAt": "2026-08-26T14:34:25.337Z",
+    "createdAt": "2026-08-26T14:28:08.058Z",
+    "id": "RemotiveIngest01",
+    "name": "JobHunter - Remotive Ingestion",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [0, 0],
+        "id": "127b808a-9fcc-4b97-aac1-f0f764b2d21d",
+        "name": "Manual Trigger"
+      },
+      {
+        "parameters": { "inputSource": "passthrough" },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [0, 160],
+        "id": "remotive-subworkflow-trigger",
+        "name": "Called by Daily Automation"
+      },
+      {
+        "parameters": {
+          "url": "https://remotive.com/api/remote-jobs",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              { "name": "category", "value": "software-dev" },
+              { "name": "limit", "value": "100" }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [224, 0],
+        "id": "42918dad-a3c4-4097-86d8-5643e95d2cf9",
+        "name": "Fetch Remotive Jobs"
+      },
+      {
+        "parameters": { "fieldToSplitOut": "jobs", "options": {} },
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [448, 0],
+        "id": "ac593ad3-e0e3-4a2c-a0de-22b787236229",
+        "name": "Split Jobs"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "5d75fc38-bd55-4ca9-baa3-968d6d9b21b7",
+                "name": "title",
+                "value": "={{ $json.title }}",
+                "type": "string"
+              },
+              {
+                "id": "4c50b36c-c417-4c76-b323-df68bdf4478b",
+                "name": "company",
+                "value": "={{ $json.company_name }}",
+                "type": "string"
+              },
+              {
+                "id": "9500a609-8ab3-45d4-b756-126df13e4dd9",
+                "name": "city",
+                "value": "={{ $json.candidate_required_location }}",
+                "type": "string"
+              },
+              {
+                "id": "5b35c839-6d2c-40c8-836b-50c684bed894",
+                "name": "work_model",
+                "value": "Remote",
+                "type": "string"
+              },
+              {
+                "id": "b5bec3b9-5a69-4a75-9552-4ee06c496772",
+                "name": "source",
+                "value": "Remotive",
+                "type": "string"
+              },
+              {
+                "id": "e7b6f9f4-55f1-46da-a83c-9747993bdbd3",
+                "name": "source_url",
+                "value": "={{ $json.url }}",
+                "type": "string"
+              },
+              {
+                "id": "ab960675-2969-428f-87fa-6ccb83bf682b",
+                "name": "external_job_id",
+                "value": "={{ String($json.id) }}",
+                "type": "string"
+              },
+              {
+                "id": "78a43aba-f019-41f9-9b20-87e42f10067b",
+                "name": "description",
+                "value": "={{ $json.description }}",
+                "type": "string"
+              },
+              {
+                "id": "b88f4b6e-d2ca-4b1f-b20e-8cfc44f5082e",
+                "name": "posted_at",
+                "value": "={{ $json.publication_date }}",
+                "type": "string"
+              },
+              {
+                "id": "7680d08a-0a8a-436c-9cd6-bd770da9c609",
+                "name": "career_level",
+                "value": "={{ /\\b(junior|entry[\\s-]?level|graduate|new[\\s-]?grad|trainee|intern(?:ship)?|associate)\\b/i.test($json.title || '') ? 'junior' : 'unknown' }}",
+                "type": "string"
+              },
+              {
+                "id": "4206c142-39d2-4459-a560-f4e7be86d555",
+                "name": "experience_text",
+                "value": "={{ [...new Set(((($json.title || '') + ' ' + ($json.description || '')).match(/\\b(?:(?:minimum(?:\\s+of)?|at\\s+least)\\s+)?\\d+\\s*(?:\\+|[-â€“â€”]\\s*\\d+)?\\s*(?:years?|yrs?)\\b/gi) || []).map(value => value.trim()))].join('; ') }}",
+                "type": "string"
+              },
+              {
+                "id": "b1edcde2-a8e5-46af-b2e4-cd576e89f68e",
+                "name": "role_category",
+                "value": "={{ /\\b(?:machine learning engineer|ml engineer|ai engineer|artificial intelligence engineer|junior ai engineer|junior machine learning engineer|data scientist|junior data scientist)\\b/i.test($json.title || '') ? 'ai_ml' : /\\b(?:data engineer|junior data engineer|analytics engineer|data analyst|junior data analyst|business intelligence|bi developer|etl developer|data platform engineer)\\b/i.test($json.title || '') ? 'data' : /\\b(?:python developer|python engineer|backend developer|backend engineer|back-end developer|back-end engineer|fastapi developer)\\b/i.test($json.title || '') ? 'backend' : /\\b(?:software engineer|software developer|junior software engineer|junior software developer|graduate software engineer)\\b/i.test($json.title || '') ? 'software' : 'unknown' }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.5,
+        "position": [672, 0],
+        "id": "a8fba5d9-d2fc-4f70-af11-2cd2395fd31a",
+        "name": "Normalize Fields"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "e2e590e6-5037-44be-a763-48cb2ea9c359",
+                "leftValue": "={{ !/(?:\\bsenior\\b|\\bsr\\.?(?=\\s|$)|\\bstaff\\b|\\blead\\b|\\bprincipal\\b|\\bmanager\\b|\\bdirector\\b|\\bhead\\s+of\\b|\\barchitect\\b|\\bexpert\\b|\\bvp\\b|\\bvice\\s+president\\b)/i.test($json.title || '') }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.3,
+        "position": [896, 0],
+        "id": "f1862c2e-9c12-461f-a510-d2790945ff66",
+        "name": "Filter Seniority"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "85263ba7-6879-444f-8df5-84d1561ea9b7",
+                "leftValue": "={{ !/(?:\\b(?:[5-9]|[1-9]\\d+)\\s*\\+\\s*(?:years?|yrs?)\\b|\\b(?:minimum(?:\\s+of)?|at\\s+least)\\s+(?:[5-9]|[1-9]\\d+)\\s*(?:years?|yrs?)\\b|\\b(?:[5-9]|[1-9]\\d+)\\s*[-â€“â€”]\\s*\\d+\\s*(?:years?|yrs?)\\b)/i.test($json.experience_text || '') }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.3,
+        "position": [1120, 0],
+        "id": "705be0f2-3ae8-4975-82ab-001f49351e49",
+        "name": "Filter Experience"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "d22f0b5e-d8a7-40b3-8ba3-f97eef805e94",
+                "leftValue": "={{ !/\\b(?:office assistant|virtual assistant|customer support|product support|technical support|content reviewer|content moderator|data labeling|data annotation|annotator|collection|sales|marketing|recruiter|human resources|account manager|customer success|graphic designer|seo|copywriter)\\b/i.test($json.title || '') && ($json.role_category !== 'unknown' || (/\\b(?:engineer|developer|programmer)\\b/i.test($json.title || '') && [...new Set((($json.description || '').toLowerCase().match(/\\b(?:python|sql|postgresql|fastapi|pandas|numpy|machine learning|pytorch|tensorflow|etl|airflow|spark|docker|rest api|backend|data pipeline)\\b/g) || []))].length >= 2)) }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.3,
+        "position": [1344, 0],
+        "id": "c6809311-3c4e-4b6d-a84d-e8c0a51ef31a",
+        "name": "Filter Relevant Jobs"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.jobs (title, company, city, work_model, source, source_url, external_job_id, description, posted_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz)\nON CONFLICT DO NOTHING\nRETURNING id, title, company, city, source, source_url;",
+          "options": {
+            "queryReplacement": "={{ [$json.title, $json.company, $json.city, $json.work_model, $json.source, $json.source_url, $json.external_job_id, $json.description, $json.posted_at] }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [1568, 0],
+        "id": "7a348687-ed9d-4c38-af7c-12ef75c3e114",
+        "name": "Insert New Jobs",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      }
+    ],
+    "connections": {
+      "Called by Daily Automation": {
+        "main": [
+          [{ "node": "Fetch Remotive Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Manual Trigger": {
+        "main": [
+          [{ "node": "Fetch Remotive Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Fetch Remotive Jobs": {
+        "main": [[{ "node": "Split Jobs", "type": "main", "index": 0 }]]
+      },
+      "Split Jobs": {
+        "main": [[{ "node": "Normalize Fields", "type": "main", "index": 0 }]]
+      },
+      "Normalize Fields": {
+        "main": [[{ "node": "Filter Seniority", "type": "main", "index": 0 }]]
+      },
+      "Filter Seniority": {
+        "main": [[{ "node": "Filter Experience", "type": "main", "index": 0 }]]
+      },
+      "Filter Experience": {
+        "main": [
+          [{ "node": "Filter Relevant Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Filter Relevant Jobs": {
+        "main": [[{ "node": "Insert New Jobs", "type": "main", "index": 0 }]]
+      }
+    },
+    "settings": { "executionOrder": "v1" },
+    "staticData": null,
+    "meta": null,
+    "nodeGroups": [],
+    "pinData": {},
+    "versionId": "e3aa4dbf-6a45-46f5-b0f4-ca67f750ada6",
+    "activeVersionId": null,
+    "versionCounter": 3,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-08-26T14:28:08.058Z",
+        "createdAt": "2026-08-26T14:28:08.058Z",
+        "role": "workflow:owner",
+        "workflowId": "RemotiveIngest01",
+        "projectId": "42IjbYSnuzn0Glt0",
+        "project": {
+          "updatedAt": "2026-08-26T11:24:11.062Z",
+          "createdAt": "2026-08-26T11:23:24.390Z",
+          "id": "42IjbYSnuzn0Glt0",
+          "name": "aliberk olukkaya <aliberk1282@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "9657b503-8fae-409e-920a-733dd623beb1"
+        }
+      }
+    ],
+    "versionMetadata": { "name": null, "description": null }
+  }
+]

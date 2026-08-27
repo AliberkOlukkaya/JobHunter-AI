@@ -1,0 +1,271 @@
+[
+  {
+    "updatedAt": "2026-08-27T12:26:18.961Z",
+    "createdAt": "2026-08-26T16:09:12.030Z",
+    "id": "DailyAutomation01",
+    "name": "JobHunter - Daily Automation",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              { "field": "cronExpression", "expression": "0 9 * * *" }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [0, -80],
+        "id": "daily-schedule-trigger",
+        "name": "Schedule Trigger"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [0, 80],
+        "id": "daily-manual-trigger",
+        "name": "Manual Trigger"
+      },
+      {
+        "parameters": {
+          "source": "database",
+          "workflowId": {
+            "__rl": true,
+            "value": "RemotiveIngest01",
+            "mode": "list",
+            "cachedResultName": "JobHunter - Remotive Ingestion"
+          },
+          "mode": "once",
+          "options": { "waitForSubWorkflow": true }
+        },
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [240, 0],
+        "id": "run-remotive",
+        "name": "Run Remotive Ingestion",
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const failed = $input.all().some(item => item.json?.error); return [{ json: { remotive_status: failed ? 'failed' : 'completed' } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 0],
+        "id": "remotive-status",
+        "name": "Remotive Status"
+      },
+      {
+        "parameters": {
+          "source": "database",
+          "workflowId": {
+            "__rl": true,
+            "value": "JoobleTurkeyMock1",
+            "mode": "list",
+            "cachedResultName": "JobHunter - Jooble Turkey Ingestion"
+          },
+          "mode": "once",
+          "options": { "waitForSubWorkflow": true }
+        },
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [680, 0],
+        "id": "run-jooble",
+        "name": "Run Jooble Turkey Ingestion",
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput",
+        "notes": "Jooble Turkey runs in live API mode."
+      },
+      {
+        "parameters": {
+          "jsCode": "const failed = $input.all().some(item => item.json?.error); return [{ json: { ...$('Remotive Status').first().json, jooble_status: failed ? 'failed' : 'completed' } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 0],
+        "id": "jooble-status",
+        "name": "Jooble Status"
+      },
+      {
+        "parameters": {
+          "source": "database",
+          "workflowId": {
+            "__rl": true,
+            "value": "AIJobScoringMock1",
+            "mode": "list",
+            "cachedResultName": "JobHunter - AI Job Scoring"
+          },
+          "mode": "once",
+          "options": { "waitForSubWorkflow": true }
+        },
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [1120, 0],
+        "id": "run-scoring",
+        "name": "Run AI Job Scoring",
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput",
+        "notes": "AI scoring uses Gemini, then OpenAI, then deterministic fallback."
+      },
+      {
+        "parameters": {
+          "jsCode": "const failed = $input.all().some(item => item.json?.error); return [{ json: { ...$('Jooble Status').first().json, scoring_status: failed ? 'failed' : 'completed' } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1340, 0],
+        "id": "scoring-status",
+        "name": "Scoring Status"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "WITH ranked AS (\n  SELECT id, title, company, city, match_score, ai_recommendation, source_url\n  FROM public.jobs\n  WHERE ai_recommendation IN ('strong_apply', 'apply', 'maybe')\n  ORDER BY match_score DESC NULLS LAST, id DESC\n  LIMIT 10\n)\nSELECT CURRENT_DATE AS digest_date,\n  (SELECT COUNT(*)::int FROM public.jobs WHERE created_at::date = CURRENT_DATE) AS total_new_jobs,\n  (SELECT COUNT(*)::int FROM public.jobs WHERE ai_recommendation = 'strong_apply') AS strong_apply_count,\n  (SELECT COUNT(*)::int FROM public.jobs WHERE ai_recommendation = 'apply') AS apply_count,\n  (SELECT COUNT(*)::int FROM public.jobs WHERE ai_recommendation = 'maybe') AS maybe_count,\n  COALESCE((SELECT jsonb_agg(jsonb_build_object('id', id, 'title', title, 'company', company, 'city', city, 'match_score', match_score, 'recommendation', ai_recommendation, 'source_url', source_url) ORDER BY match_score DESC NULLS LAST, id DESC) FROM ranked), '[]'::jsonb) AS top_jobs;",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [1560, 0],
+        "id": "fetch-best-jobs",
+        "name": "Fetch Best Jobs",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const status = $('Scoring Status').first().json; return [{ json: { ...$json, ...status, digest_status: 'ready', source_modes: { remotive: 'real_public_api', jooble: 'live_api', scoring: 'gemini_openai_fallback' } } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1780, 0],
+        "id": "build-daily-digest",
+        "name": "Build Daily Digest"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.daily_digests (digest_date, total_new_jobs, strong_apply_count, apply_count, maybe_count, top_jobs)\nVALUES ($1::date, $2, $3, $4, $5, $6::jsonb)\nON CONFLICT (digest_date) DO UPDATE SET\n  total_new_jobs = EXCLUDED.total_new_jobs,\n  strong_apply_count = EXCLUDED.strong_apply_count,\n  apply_count = EXCLUDED.apply_count,\n  maybe_count = EXCLUDED.maybe_count,\n  top_jobs = EXCLUDED.top_jobs\nRETURNING id, digest_date, total_new_jobs, strong_apply_count, apply_count, maybe_count, top_jobs, created_at, 'stored' AS digest_status;",
+          "options": {
+            "queryReplacement": "={{ [$json.digest_date, $json.total_new_jobs, $json.strong_apply_count, $json.apply_count, $json.maybe_count, JSON.stringify($json.top_jobs)] }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [2000, 0],
+        "id": "save-digest",
+        "name": "Save Digest",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [2220, 0],
+        "id": "notification-placeholder",
+        "name": "Notification (Disabled Placeholder)",
+        "disabled": true,
+        "notes": "Reserved for future Email, Telegram, or Slack delivery."
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [{ "node": "Run Remotive Ingestion", "type": "main", "index": 0 }]
+        ]
+      },
+      "Manual Trigger": {
+        "main": [
+          [{ "node": "Run Remotive Ingestion", "type": "main", "index": 0 }]
+        ]
+      },
+      "Run Remotive Ingestion": {
+        "main": [[{ "node": "Remotive Status", "type": "main", "index": 0 }]]
+      },
+      "Remotive Status": {
+        "main": [
+          [
+            {
+              "node": "Run Jooble Turkey Ingestion",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Jooble Turkey Ingestion": {
+        "main": [[{ "node": "Jooble Status", "type": "main", "index": 0 }]]
+      },
+      "Jooble Status": {
+        "main": [[{ "node": "Run AI Job Scoring", "type": "main", "index": 0 }]]
+      },
+      "Run AI Job Scoring": {
+        "main": [[{ "node": "Scoring Status", "type": "main", "index": 0 }]]
+      },
+      "Scoring Status": {
+        "main": [[{ "node": "Fetch Best Jobs", "type": "main", "index": 0 }]]
+      },
+      "Fetch Best Jobs": {
+        "main": [[{ "node": "Build Daily Digest", "type": "main", "index": 0 }]]
+      },
+      "Build Daily Digest": {
+        "main": [[{ "node": "Save Digest", "type": "main", "index": 0 }]]
+      },
+      "Save Digest": {
+        "main": [
+          [
+            {
+              "node": "Notification (Disabled Placeholder)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": { "executionOrder": "v1", "timezone": "Europe/Istanbul" },
+    "staticData": {
+      "node:Schedule Trigger": {
+        "recurrenceRules": [null],
+        "recurrenceRuleSignatures": [null]
+      }
+    },
+    "meta": null,
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "40ebce79-da79-449d-b9cb-d346e92438e1",
+    "activeVersionId": "40ebce79-da79-449d-b9cb-d346e92438e1",
+    "versionCounter": 4,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-08-26T16:09:12.030Z",
+        "createdAt": "2026-08-26T16:09:12.030Z",
+        "role": "workflow:owner",
+        "workflowId": "DailyAutomation01",
+        "projectId": "42IjbYSnuzn0Glt0",
+        "project": {
+          "updatedAt": "2026-08-26T11:24:11.062Z",
+          "createdAt": "2026-08-26T11:23:24.390Z",
+          "id": "42IjbYSnuzn0Glt0",
+          "name": "aliberk olukkaya <aliberk1282@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "9657b503-8fae-409e-920a-733dd623beb1"
+        }
+      }
+    ],
+    "versionMetadata": { "name": null, "description": null }
+  }
+]
