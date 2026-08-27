@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .text import clean_display_text, preserve_source_url
+
 
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -23,6 +25,21 @@ class JobResponse(BaseModel):
     matched_skills: list[str] = Field(default_factory=list)
     missing_skills: list[str] = Field(default_factory=list)
     ai_analyzed_at: datetime | None = None
+
+    @field_validator("title", "company", "city", "work_model", "ai_summary", mode="before")
+    @classmethod
+    def clean_single_line_display_fields(cls, value: str | None) -> str | None:
+        return clean_display_text(value)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def clean_description(cls, value: str | None) -> str | None:
+        return clean_display_text(value, multiline=True)
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def retain_original_source_url(cls, value: str | None) -> str | None:
+        return preserve_source_url(value)
 
     @field_validator("matched_skills", "missing_skills", mode="before")
     @classmethod
@@ -52,6 +69,16 @@ class DailyDigestResponse(BaseModel):
     top_jobs: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
 
+    @field_validator("top_jobs", mode="before")
+    @classmethod
+    def clean_digest_jobs(cls, value: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        jobs = value or []
+        for job in jobs:
+            for field in ("title", "company", "city"):
+                if field in job:
+                    job[field] = clean_display_text(job[field])
+        return jobs
+
 
 ApplicationStatus = Literal["saved", "ready_to_apply", "applied", "interview", "rejected", "offer", "withdrawn"]
 
@@ -78,6 +105,16 @@ class ApplicationJobResponse(BaseModel):
     city: str | None = None
     match_score: int | None = None
     source_url: str | None = None
+
+    @field_validator("title", "company", "city", mode="before")
+    @classmethod
+    def clean_application_job_fields(cls, value: str | None) -> str | None:
+        return clean_display_text(value)
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def retain_application_job_url(cls, value: str | None) -> str | None:
+        return preserve_source_url(value)
 
 
 class ApplicationResponse(BaseModel):

@@ -11,6 +11,8 @@ from app.database import Base, get_db
 from app.main import app
 from app.linkedin import canonicalize_linkedin_job_url
 from app.models import DailyDigest, Job
+from app.schemas import JobResponse
+from app.text import clean_display_text, preserve_source_url
 
 
 @compiles(JSONB, "sqlite")
@@ -189,3 +191,20 @@ def test_linkedin_canonical_url_behavior():
     canonical, job_id = canonicalize_linkedin_job_url("https://www.linkedin.com/jobs/view/data-role/?currentJobId=445566&trackingId=abc")
     assert canonical == "https://www.linkedin.com/jobs/view/445566/"
     assert job_id == "445566"
+
+
+def test_jooble_original_url_preserved():
+    url = "https://tr.jooble.org/jdp/1234567890123456789?ref=original&position=1"
+    assert preserve_source_url(url) == url
+    response = JobResponse(id=99, title="Data Engineer", company="Example", source="Jooble", source_url=url)
+    assert response.source_url == url
+
+
+def test_html_entities_decoded_and_html_removed():
+    value = "<p>Python &amp; SQL&nbsp;role</p><script>alert('x')</script><p>Next &#39;step&#39;</p>"
+    assert clean_display_text(value, multiline=True) == "Python & SQL role\nNext 'step'"
+
+
+def test_turkish_utf8_text_preserved():
+    value = "İstanbul, İzmir, Çeşme, görüşme ve iş"
+    assert clean_display_text(value) == value

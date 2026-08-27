@@ -67,6 +67,14 @@ function label(value: string | null) {
   return value ? value.replaceAll("_", " ") : "unanalyzed";
 }
 
+function validListingUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
+
 export default function Dashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -179,31 +187,25 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen bg-ink text-slate-100">
       <header className="border-b border-white/10 px-5 py-5 md:px-10">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-mint">Talent intelligence workspace</p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight md:text-2xl">JobHunter AI</h1>
-          </div>
-          <div className="flex items-center gap-4">
+        <div className="mx-auto flex max-w-[1500px] flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">JobHunter AI</h1>
+          <nav className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-5" aria-label="Main navigation">
+            <button className={`view-tab ${activeView === "jobs" ? "active" : ""}`} onClick={() => setActiveView("jobs")}>Jobs</button>
+            <button className={`view-tab ${activeView === "applications" ? "active" : ""}`} onClick={() => setActiveView("applications")}>Applications <span className="hidden sm:inline">· {applications.length}</span></button>
             <button className="header-action" onClick={() => setImportOpen(true)}>Import LinkedIn Job</button>
-            <div className="hidden items-center gap-2 font-mono text-xs text-slate-300 sm:flex"><span className="h-2 w-2 animate-pulse rounded-full bg-mint" /> System ready</div>
-          </div>
+          </nav>
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1500px] px-5 py-7 md:px-10 md:py-10">
-        <nav className="mb-7 flex gap-7 border-b border-white/10" aria-label="Dashboard views">
-          <button className={`view-tab ${activeView === "jobs" ? "active" : ""}`} onClick={() => setActiveView("jobs")}>Jobs</button>
-          <button className={`view-tab ${activeView === "applications" ? "active" : ""}`} onClick={() => setActiveView("applications")}>Applications · {applications.length}</button>
-        </nav>
+      <div className="mx-auto max-w-[1500px] px-5 py-6 md:px-10 md:py-8">
         {actionError && <p className="mb-5 border-l-2 border-red-400 pl-3 text-sm text-red-200" role="alert">{actionError}</p>}
         <div className={activeView === "jobs" ? "block" : "hidden"}>
         <section className="grid grid-cols-2 border-y border-white/10 md:grid-cols-4" aria-label="Job statistics">
           {[
-            ["Total jobs", stats?.total_jobs ?? "—"],
-            ["Strong apply", stats?.strong_apply ?? "—"],
-            ["Apply", stats?.apply ?? "—"],
-            ["Average score", stats?.average_score ?? "—"],
+            ["Total Jobs", stats?.total_jobs ?? "—"],
+            ["Strong Matches", stats?.strong_apply ?? "—"],
+            ["Applications", applications.length],
+            ["Average Score", stats?.average_score ?? "—"],
           ].map(([name, value]) => (
             <div key={name} className="border-white/10 px-3 py-5 odd:border-r md:border-r md:px-6 md:last:border-r-0">
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">{name}</p>
@@ -212,11 +214,11 @@ export default function Dashboard() {
           ))}
         </section>
 
-        <section className="digest-section mt-8 border-y border-white/10 py-7" aria-labelledby="digest-title">
+        <section className="digest-section mt-6 border-b border-white/10 pb-5" aria-labelledby="digest-title">
           <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-mint">Daily automation</p>
-              <h2 id="digest-title" className="mt-1 text-2xl font-semibold tracking-tight">Today&apos;s Job Digest</h2>
+              <h2 id="digest-title" className="mt-1 text-lg font-semibold tracking-tight">Today&apos;s Job Digest</h2>
             </div>
             {digest && <p className="font-mono text-xs text-slate-500">{digest.digest_date}</p>}
           </div>
@@ -224,7 +226,7 @@ export default function Dashboard() {
           {!loading && !digest ? (
             <p className="mt-6 text-sm text-slate-400">No daily digest generated yet.</p>
           ) : digest ? (
-            <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(360px,.8fr)_1.4fr]">
+            <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(320px,.7fr)_1.4fr]">
               <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4 lg:grid-cols-2">
                 {[
                   ["New jobs", digest.total_new_jobs],
@@ -234,7 +236,7 @@ export default function Dashboard() {
                 ].map(([name, value]) => (
                   <div key={name} className="border-l border-white/10 pl-4">
                     <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">{name}</dt>
-                    <dd className="mt-1 text-2xl font-semibold text-white">{value}</dd>
+                    <dd className="mt-1 text-xl font-semibold text-white">{value}</dd>
                   </div>
                 ))}
               </dl>
@@ -246,7 +248,7 @@ export default function Dashboard() {
                       <li key={job.id} className="digest-row grid grid-cols-[44px_1fr_auto] items-center gap-3 py-3">
                         <span className="font-mono text-lg text-mint">{job.match_score}</span>
                         <span className="min-w-0"><strong className="block truncate text-sm font-medium text-white">{job.title}</strong><span className="text-xs text-slate-500">{job.company}</span></span>
-                        {job.source_url && <a className="text-xs text-slate-400 hover:text-mint" href={job.source_url} target="_blank" rel="noreferrer" aria-label={`Open ${job.title}`}>Open ↗</a>}
+                        {validListingUrl(job.source_url) && <a className="text-xs text-slate-400 hover:text-mint" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer" aria-label={`Open ${job.title}`}>Open ↗</a>}
                       </li>
                     ))}
                   </ol>
@@ -256,27 +258,27 @@ export default function Dashboard() {
           ) : null}
         </section>
 
-        <section className="mt-8 overflow-hidden rounded-[2px] bg-paper text-slate-900 shadow-[0_25px_80px_rgba(0,0,0,0.25)]">
+        <section className="mt-6 overflow-hidden rounded-[2px] bg-paper text-slate-900 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
           <div className="border-b border-slate-200 px-5 py-5 md:px-7">
             <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-teal-700">Ranked opportunities</p>
-                <h2 className="mt-1 text-2xl font-semibold tracking-tight">Jobs worth your attention</h2>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-teal-700">Jobs</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight">Ranked opportunities</h2>
               </div>
               <p className="text-sm text-slate-500">Skip recommendations are hidden by default.</p>
             </div>
 
-            <form onSubmit={submitFilters} className="mt-6 grid gap-3 md:grid-cols-[1.5fr_repeat(4,1fr)_auto]">
+            <form onSubmit={submitFilters} className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1.5fr_repeat(4,1fr)_auto]">
               <input aria-label="Search" placeholder="Search title or company" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} />
               <input aria-label="City" placeholder="City" value={filters.city} onChange={(e) => setFilters({...filters, city: e.target.value})} />
-              <select aria-label="Recommendation" value={filters.recommendation} onChange={(e) => setFilters({...filters, recommendation: e.target.value})}>
-                <option value="">Recommendation</option><option value="strong_apply">Strong apply</option><option value="apply">Apply</option><option value="maybe">Maybe</option><option value="skip">Skip</option>
+              <select aria-label="Source" value={filters.source} onChange={(e) => setFilters({...filters, source: e.target.value})}>
+                <option value="">Source</option><option value="LinkedIn">LinkedIn</option><option value="Jooble">Jooble</option><option value="Remotive">Remotive</option>
               </select>
               <select aria-label="Minimum score" value={filters.min_score} onChange={(e) => setFilters({...filters, min_score: e.target.value})}>
                 <option value="">Minimum score</option><option value="55">55+</option><option value="70">70+</option><option value="85">85+</option>
               </select>
-              <select aria-label="Source" value={filters.source} onChange={(e) => setFilters({...filters, source: e.target.value})}>
-                <option value="">Source</option><option value="LinkedIn">LinkedIn</option><option value="Jooble">Jooble</option><option value="Remotive">Remotive</option>
+              <select aria-label="Recommendation" value={filters.recommendation} onChange={(e) => setFilters({...filters, recommendation: e.target.value})}>
+                <option value="">Recommendation</option><option value="strong_apply">Strong apply</option><option value="apply">Apply</option><option value="maybe">Maybe</option><option value="skip">Skip</option>
               </select>
               <div className="flex gap-2">
                 <button className="bg-ink px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700" type="submit">Filter</button>
@@ -290,32 +292,19 @@ export default function Dashboard() {
             {error && <Status message="Backend unavailable." action="Retry" onAction={loadDashboard} />}
             {!loading && !error && visibleJobs.length === 0 && <Status message="No matching jobs found." />}
             {!loading && !error && visibleJobs.map((job, index) => (
-              <article key={job.id} className="job-row grid gap-4 border-b border-slate-200 px-5 py-6 last:border-b-0 md:grid-cols-[minmax(0,1.5fr)_minmax(220px,.8fr)_150px] md:px-7" style={{animationDelay: `${index * 45}ms`}}>
+              <article key={job.id} className="job-row grid gap-4 border-b border-slate-200 px-5 py-5 last:border-b-0 md:grid-cols-[64px_minmax(0,1fr)_minmax(260px,auto)] md:items-center md:px-7" style={{animationDelay: `${index * 35}ms`}}>
+                <div><p className="metric-label">Score</p><span className="font-mono text-2xl font-semibold text-slate-950">{job.match_score ?? "—"}</span></div>
                 <div className="min-w-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold tracking-tight text-slate-950">{job.title}</h3>
-                      <p className="mt-1 text-sm text-slate-500">{job.company}</p>
-                    </div>
-                    <span className="font-mono text-2xl font-medium text-slate-950">{job.match_score ?? "—"}</span>
-                  </div>
-                  <p className="mt-3 font-mono text-[11px] uppercase tracking-wide text-slate-500">{job.city ?? "Location unknown"} · {job.work_model ?? "Unknown"} · {job.source ?? "Unknown source"}</p>
+                  <h3 className="text-lg font-semibold tracking-tight text-slate-950">{job.title}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{job.company}</p>
+                  <p className="mt-2 font-mono text-[10px] uppercase tracking-wide text-slate-500">{job.city ?? "Location unknown"} · {job.work_model ?? "Unknown"} · {job.source ?? "Unknown source"}</p>
+                  {job.matched_skills.length > 0 && <p className="mt-2 text-xs text-teal-700">{job.matched_skills.slice(0,4).join(" · ")}{job.matched_skills.length > 4 ? ` · +${job.matched_skills.length-4}` : ""}</p>}
+                  {applicationByJob.get(job.id) && <p className="application-current mt-2 text-left">Application: {label(applicationByJob.get(job.id)!.status)}</p>}
                 </div>
-                <div>
-                  <span className={`recommendation recommendation-${job.ai_recommendation ?? "unknown"}`}>{label(job.ai_recommendation)}</span>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {job.matched_skills.slice(0, 4).map((skill) => <span className="skill" key={skill}>{skill}</span>)}
-                    {job.missing_skills.length > 0 && <span className="skill missing">{job.missing_skills.length} missing</span>}
-                  </div>
-                </div>
-                <div className="flex items-end gap-3 md:flex-col md:items-stretch md:justify-center">
-                  <button className="action-primary" onClick={() => { setSelectedId(job.id); setSelectedJob(job); }}>View job</button>
-                  <div className="grid grid-cols-3 gap-1" aria-label={`Track ${job.title}`}>
-                    {([['saved','Save'],['ready_to_apply','Ready'],['applied','Applied']] as [ApplicationStatus,string][]).map(([status,text]) => <button disabled={savingJobId === job.id} className={`quick-action ${applicationByJob.get(job.id)?.status === status ? "active" : ""}`} key={status} onClick={() => void setApplicationStatus(job.id,status)}>{text}</button>)}
-                  </div>
-                  {applicationByJob.get(job.id) && <p className="application-current">Application: {label(applicationByJob.get(job.id)!.status)}</p>}
-                  {job.source === "LinkedIn" && <div className="linkedin-review-actions"><button onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>Approve</button><button onClick={() => dismissJob(job.id)}>Skip</button></div>}
-                  {job.source_url && <a className="action-secondary" href={job.source_url} target="_blank" rel="noreferrer">Open listing ↗</a>}
+                <div className="grid grid-cols-3 gap-2 md:min-w-[260px]">
+                  <button className="action-primary" onClick={() => { setSelectedId(job.id); setSelectedJob(job); }}>View</button>
+                  <button disabled={savingJobId === job.id || applicationByJob.get(job.id)?.status === "ready_to_apply"} className="quick-action" onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>{job.source === "LinkedIn" ? "Approve" : "Ready"}</button>
+                  {!job.source_url ? <button className="action-secondary" disabled>Open Listing</button> : validListingUrl(job.source_url) ? <a className="action-secondary" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer">Open Listing</a> : null}
                 </div>
               </article>
             ))}
@@ -325,17 +314,17 @@ export default function Dashboard() {
         {activeView === "applications" && <ApplicationsView applications={visibleApplications} filter={applicationFilter} onFilter={setApplicationFilter} onOpen={(application) => { setSelectedId(application.job_id); setSelectedJob(null); }} />}
       </div>
 
-      {selectedId !== null && <JobDetail job={selectedJob} application={applicationByJob.get(selectedId) ?? null} onSaved={storeApplication} onClose={() => { setSelectedId(null); setSelectedJob(null); }} />}
+      {selectedId !== null && <JobDetail job={selectedJob} application={applicationByJob.get(selectedId) ?? null} onSaved={storeApplication} onDismiss={() => { dismissJob(selectedId); setSelectedId(null); setSelectedJob(null); }} onClose={() => { setSelectedId(null); setSelectedJob(null); }} />}
       {importOpen && <LinkedInImport onClose={() => setImportOpen(false)} onImported={() => void loadDashboard()} />}
     </main>
   );
 }
 
 function Status({message, action, onAction}: {message: string; action?: string; onAction?: () => void}) {
-  return <div className="flex min-h-[380px] flex-col items-center justify-center gap-4 text-sm text-slate-500"><span>{message}</span>{action && <button className="action-primary" onClick={onAction}>{action}</button>}</div>;
+  return <div className="flex min-h-[240px] flex-col items-center justify-center gap-4 text-sm text-slate-500"><span>{message}</span>{action && <button className="action-primary" onClick={onAction}>{action}</button>}</div>;
 }
 
-function JobDetail({job, application, onSaved, onClose}: {job: Job | null; application: Application | null; onSaved: (value: Application) => void; onClose: () => void}) {
+function JobDetail({job, application, onSaved, onDismiss, onClose}: {job: Job | null; application: Application | null; onSaved: (value: Application) => void; onDismiss: () => void; onClose: () => void}) {
   const [status, setStatus] = useState<ApplicationStatus>(application?.status ?? "saved");
   const [notes, setNotes] = useState(application?.notes ?? "");
   const [followUp, setFollowUp] = useState(application?.follow_up_at?.slice(0, 10) ?? "");
@@ -357,20 +346,18 @@ function JobDetail({job, application, onSaved, onClose}: {job: Job | null; appli
       <aside className="detail-panel ml-auto h-full w-full max-w-2xl overflow-y-auto bg-paper p-6 text-slate-900 shadow-2xl md:p-10" onMouseDown={(event) => event.stopPropagation()}>
         <button className="mb-8 font-mono text-xs uppercase tracking-widest text-slate-500 hover:text-slate-950" onClick={onClose}>← Close</button>
         {!job ? <Status message="Loading job details..." /> : <>
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-teal-700">{job.source ?? "Job listing"}</p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{job.title}</h2>
-          <p className="mt-2 text-lg text-slate-500">{job.company}</p>
-          <p className="mt-5 font-mono text-xs text-slate-500">{job.city ?? "Location unknown"} · {job.work_model ?? "Unknown"}</p>
-
-          <div className="my-8 flex items-end justify-between border-y border-slate-200 py-5">
-            <div><p className="metric-label">Match score</p><p className="mt-1 text-4xl font-semibold">{job.match_score ?? "—"}</p></div>
-            <span className={`recommendation recommendation-${job.ai_recommendation ?? "unknown"}`}>{label(job.ai_recommendation)}</span>
-          </div>
-
-          <DetailSection title="AI summary"><p>{job.ai_summary ?? "No AI summary available."}</p></DetailSection>
-          <DetailSection title="Matched skills"><SkillList skills={job.matched_skills} empty="No matched skills recorded." /></DetailSection>
-          <DetailSection title="Missing skills"><SkillList skills={job.missing_skills} empty="No missing skills recorded." missing /></DetailSection>
-          <DetailSection title="Application tracking">
+          <DetailSection title="Overview">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-teal-700">{job.source ?? "Job listing"}</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{job.title}</h2>
+            <p className="mt-2 text-lg text-slate-500">{job.company}</p>
+            <p className="mt-4 font-mono text-xs text-slate-500">{job.city ?? "Location unknown"} · {job.work_model ?? "Unknown"}</p>
+          </DetailSection>
+          <DetailSection title="AI Match">
+            <div className="flex items-end justify-between border-y border-slate-200 py-4"><div><p className="metric-label">Match score</p><p className="mt-1 text-4xl font-semibold">{job.match_score ?? "—"}</p></div><span className={`recommendation recommendation-${job.ai_recommendation ?? "unknown"}`}>{label(job.ai_recommendation)}</span></div>
+            <p className="mt-4 leading-6 text-slate-600">{job.ai_summary ?? "No AI summary available."}</p>
+          </DetailSection>
+          <DetailSection title="Skills"><div className="grid gap-5 sm:grid-cols-2"><div><p className="metric-label mb-2">Matched</p><SkillList skills={job.matched_skills} empty="None recorded." /></div><div><p className="metric-label mb-2">Missing</p><SkillList skills={job.missing_skills} empty="None recorded." missing /></div></div></DetailSection>
+          <DetailSection title="Application">
             <div className="tracking-form">
               <label>Status<select value={status} onChange={(event) => setStatus(event.target.value as ApplicationStatus)}>{statusOptions.map((value) => <option value={value} key={value}>{label(value)}</option>)}</select></label>
               <label>Follow-up date<input type="date" value={followUp} onChange={(event) => setFollowUp(event.target.value)} /></label>
@@ -378,8 +365,8 @@ function JobDetail({job, application, onSaved, onClose}: {job: Job | null; appli
               <div className="flex items-center gap-3 md:col-span-2"><button className="action-primary" onClick={() => void saveTracking()} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : "Save tracking"}</button><span className="text-xs text-slate-500">{saveState === "saved" ? "Saved" : saveState === "error" ? "Could not save" : ""}</span></div>
             </div>
           </DetailSection>
-          <DetailSection title="Job description"><p className="whitespace-pre-wrap leading-7 text-slate-600">{job.description ?? "No description available."}</p></DetailSection>
-          {job.source_url && <a className="action-primary mt-8 inline-flex" href={job.source_url} target="_blank" rel="noreferrer">Open original listing ↗</a>}
+          <DetailSection title="Job Description"><p className="whitespace-pre-wrap leading-7 text-slate-600">{job.description ?? "No description available."}</p></DetailSection>
+          <div className="mt-8 flex flex-wrap items-center gap-3">{validListingUrl(job.source_url) && <a className="action-primary inline-flex" href={validListingUrl(job.source_url)!} target="_blank" rel="noopener noreferrer">Open Listing ↗</a>}<button className="action-secondary" onClick={onDismiss}>Hide from list</button></div>
         </>}
       </aside>
     </div>

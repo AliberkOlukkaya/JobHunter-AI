@@ -117,7 +117,7 @@
               {
                 "id": "4206c142-39d2-4459-a560-f4e7be86d555",
                 "name": "experience_text",
-                "value": "={{ [...new Set(((($json.title || '') + ' ' + ($json.description || '')).match(/\\b(?:(?:minimum(?:\\s+of)?|at\\s+least)\\s+)?\\d+\\s*(?:\\+|[-â€“â€”]\\s*\\d+)?\\s*(?:years?|yrs?)\\b/gi) || []).map(value => value.trim()))].join('; ') }}",
+                "value": "={{ [...new Set(((($json.title || '') + ' ' + ($json.description || '')).match(/\\b(?:(?:minimum(?:\\s+of)?|at\\s+least)\\s+)?\\d+\\s*(?:\\+|[-–—]\\s*\\d+)?\\s*(?:years?|yrs?)\\b/gi) || []).map(value => value.trim()))].join('; ') }}",
                 "type": "string"
               },
               {
@@ -179,7 +179,7 @@
             "conditions": [
               {
                 "id": "85263ba7-6879-444f-8df5-84d1561ea9b7",
-                "leftValue": "={{ !/(?:\\b(?:[5-9]|[1-9]\\d+)\\s*\\+\\s*(?:years?|yrs?)\\b|\\b(?:minimum(?:\\s+of)?|at\\s+least)\\s+(?:[5-9]|[1-9]\\d+)\\s*(?:years?|yrs?)\\b|\\b(?:[5-9]|[1-9]\\d+)\\s*[-â€“â€”]\\s*\\d+\\s*(?:years?|yrs?)\\b)/i.test($json.experience_text || '') }}",
+                "leftValue": "={{ !/(?:\\b(?:[5-9]|[1-9]\\d+)\\s*\\+\\s*(?:years?|yrs?)\\b|\\b(?:minimum(?:\\s+of)?|at\\s+least)\\s+(?:[5-9]|[1-9]\\d+)\\s*(?:years?|yrs?)\\b|\\b(?:[5-9]|[1-9]\\d+)\\s*[-–—]\\s*\\d+\\s*(?:years?|yrs?)\\b)/i.test($json.experience_text || '') }}",
                 "rightValue": "",
                 "operator": {
                   "type": "boolean",
