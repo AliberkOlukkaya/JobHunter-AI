@@ -1,15 +1,61 @@
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..linkedin import canonicalize_linkedin_job_url
 from ..models import Job
-from ..schemas import JobResponse, StatsResponse
+from ..schemas import JobResponse, LinkedInJobImport, LinkedInJobImportResponse, StatsResponse
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 Recommendation = Literal["strong_apply", "apply", "maybe", "skip"]
+
+
+@router.post("/jobs/import/linkedin", response_model=LinkedInJobImportResponse)
+def import_linkedin_job(payload: LinkedInJobImport, db: Annotated[Session, Depends(get_db)]) -> LinkedInJobImportResponse:
+    try:
+        canonical_url, external_job_id = canonicalize_linkedin_job_url(payload.source_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    duplicate_filters = [Job.source_url == canonical_url]
+    if external_job_id:
+        duplicate_filters.append((Job.source == "LinkedIn") & (Job.external_job_id == external_job_id))
+    existing = db.scalar(select(Job).where(or_(*duplicate_filters)))
+    if existing:
+        return LinkedInJobImportResponse(status="existing", job_id=existing.id)
+
+    now = datetime.now(UTC)
+    job = Job(
+        title=payload.title,
+        company=payload.company,
+        city=payload.city,
+        work_model=payload.work_model,
+        source="LinkedIn",
+        source_url=canonical_url,
+        external_job_id=external_job_id,
+        description=payload.description,
+        posted_at=None,
+        match_score=None,
+        discovered_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(job)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(select(Job).where(or_(*duplicate_filters)))
+        if existing:
+            return LinkedInJobImportResponse(status="existing", job_id=existing.id)
+        raise
+    db.refresh(job)
+    return LinkedInJobImportResponse(status="created", job_id=job.id)
 
 
 @router.get("/jobs", response_model=list[JobResponse])

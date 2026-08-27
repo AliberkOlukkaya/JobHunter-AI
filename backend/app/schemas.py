@@ -102,3 +102,22 @@ class ApplicationStatsResponse(BaseModel):
     rejected: int = 0
     offer: int = 0
     withdrawn: int = 0
+
+
+class LinkedInJobImport(BaseModel):
+    source_url: str
+    title: str = Field(min_length=1, max_length=500)
+    company: str = Field(min_length=1, max_length=500)
+    city: str | None = Field(default=None, max_length=500)
+    work_model: str | None = Field(default=None, max_length=100)
+    description: str | None = None
+
+    @field_validator("source_url", "title", "company", "city", "work_model", mode="before")
+    @classmethod
+    def strip_import_text(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+
+class LinkedInJobImportResponse(BaseModel):
+    status: Literal["created", "existing"]
+    job_id: int

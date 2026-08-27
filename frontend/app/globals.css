@@ -47,6 +47,12 @@ textarea { min-height: 110px; resize: vertical; }
 .tracking-form { display: grid; gap: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
 .tracking-form label { display: grid; gap: .4rem; font-family: var(--font-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: #64748b; }
 .application-row { opacity: 0; animation: row-in 320ms ease forwards; }
+.header-action { border: 1px solid rgba(110,231,200,.45); padding: .55rem .7rem; font-family: var(--font-mono), monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #6ee7c8; }
+.header-action:hover { border-color: #6ee7c8; background: rgba(110,231,200,.08); transform: translateY(-1px); }
+.linkedin-review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; }
+.linkedin-review-actions button { border-bottom: 1px solid #cbd5e1; padding: .35rem; font-size: 10px; color: #475569; }
+.linkedin-review-actions button:first-child:hover { border-color: #0f766e; color: #0f766e; }
+.linkedin-review-actions button:last-child:hover { border-color: #b45309; color: #b45309; }
 @media (min-width: 768px) { .tracking-form { grid-template-columns: 1fr 1fr; } }
 @keyframes row-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes panel-in { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: translateX(0); } }

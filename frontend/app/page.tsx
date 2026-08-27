@@ -82,9 +82,12 @@ export default function Dashboard() {
   const [applicationFilter, setApplicationFilter] = useState<"all" | ApplicationStatus>("all");
   const [savingJobId, setSavingJobId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
 
   const applicationByJob = useMemo(() => new Map(applications.map((item) => [item.job_id, item])), [applications]);
   const visibleApplications = useMemo(() => applicationFilter === "all" ? applications : applications.filter((item) => item.status === applicationFilter), [applications, applicationFilter]);
+  const visibleJobs = useMemo(() => jobs.filter((job) => !dismissedIds.has(job.id)), [jobs, dismissedIds]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ limit: "50" });
@@ -123,6 +126,14 @@ export default function Dashboard() {
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
 
   useEffect(() => {
+    const stored = window.localStorage.getItem("jobhunter-dismissed-jobs");
+    if (stored) {
+      try { setDismissedIds(new Set(JSON.parse(stored) as number[])); }
+      catch { window.localStorage.removeItem("jobhunter-dismissed-jobs"); }
+    }
+  }, []);
+
+  useEffect(() => {
     if (selectedId === null) return;
     fetch(`${API_URL}/api/jobs/${selectedId}`, { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject())
@@ -157,6 +168,14 @@ export default function Dashboard() {
     setApplications((current) => [application, ...current.filter((item) => item.job_id !== application.job_id)]);
   }
 
+  function dismissJob(jobId: number) {
+    setDismissedIds((current) => {
+      const next = new Set(current).add(jobId);
+      window.localStorage.setItem("jobhunter-dismissed-jobs", JSON.stringify([...next]));
+      return next;
+    });
+  }
+
   return (
     <main className="min-h-screen bg-ink text-slate-100">
       <header className="border-b border-white/10 px-5 py-5 md:px-10">
@@ -165,8 +184,9 @@ export default function Dashboard() {
             <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-mint">Talent intelligence workspace</p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight md:text-2xl">JobHunter AI</h1>
           </div>
-          <div className="flex items-center gap-2 font-mono text-xs text-slate-300">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-mint" /> System ready
+          <div className="flex items-center gap-4">
+            <button className="header-action" onClick={() => setImportOpen(true)}>Import LinkedIn Job</button>
+            <div className="hidden items-center gap-2 font-mono text-xs text-slate-300 sm:flex"><span className="h-2 w-2 animate-pulse rounded-full bg-mint" /> System ready</div>
           </div>
         </div>
       </header>
@@ -256,7 +276,7 @@ export default function Dashboard() {
                 <option value="">Minimum score</option><option value="55">55+</option><option value="70">70+</option><option value="85">85+</option>
               </select>
               <select aria-label="Source" value={filters.source} onChange={(e) => setFilters({...filters, source: e.target.value})}>
-                <option value="">Source</option><option value="Jooble">Jooble</option><option value="Remotive">Remotive</option>
+                <option value="">Source</option><option value="LinkedIn">LinkedIn</option><option value="Jooble">Jooble</option><option value="Remotive">Remotive</option>
               </select>
               <div className="flex gap-2">
                 <button className="bg-ink px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700" type="submit">Filter</button>
@@ -268,8 +288,8 @@ export default function Dashboard() {
           <div className="min-h-[380px]">
             {loading && <Status message="Loading jobs..." />}
             {error && <Status message="Backend unavailable." action="Retry" onAction={loadDashboard} />}
-            {!loading && !error && jobs.length === 0 && <Status message="No matching jobs found." />}
-            {!loading && !error && jobs.map((job, index) => (
+            {!loading && !error && visibleJobs.length === 0 && <Status message="No matching jobs found." />}
+            {!loading && !error && visibleJobs.map((job, index) => (
               <article key={job.id} className="job-row grid gap-4 border-b border-slate-200 px-5 py-6 last:border-b-0 md:grid-cols-[minmax(0,1.5fr)_minmax(220px,.8fr)_150px] md:px-7" style={{animationDelay: `${index * 45}ms`}}>
                 <div className="min-w-0">
                   <div className="flex items-start justify-between gap-4">
@@ -294,6 +314,7 @@ export default function Dashboard() {
                     {([['saved','Save'],['ready_to_apply','Ready'],['applied','Applied']] as [ApplicationStatus,string][]).map(([status,text]) => <button disabled={savingJobId === job.id} className={`quick-action ${applicationByJob.get(job.id)?.status === status ? "active" : ""}`} key={status} onClick={() => void setApplicationStatus(job.id,status)}>{text}</button>)}
                   </div>
                   {applicationByJob.get(job.id) && <p className="application-current">Application: {label(applicationByJob.get(job.id)!.status)}</p>}
+                  {job.source === "LinkedIn" && <div className="linkedin-review-actions"><button onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>Approve</button><button onClick={() => dismissJob(job.id)}>Skip</button></div>}
                   {job.source_url && <a className="action-secondary" href={job.source_url} target="_blank" rel="noreferrer">Open listing ↗</a>}
                 </div>
               </article>
@@ -305,6 +326,7 @@ export default function Dashboard() {
       </div>
 
       {selectedId !== null && <JobDetail job={selectedJob} application={applicationByJob.get(selectedId) ?? null} onSaved={storeApplication} onClose={() => { setSelectedId(null); setSelectedJob(null); }} />}
+      {importOpen && <LinkedInImport onClose={() => setImportOpen(false)} onImported={() => void loadDashboard()} />}
     </main>
   );
 }
@@ -378,6 +400,33 @@ function ApplicationsView({applications, filter, onFilter, onOpen}: {application
       <button className="action-primary" onClick={() => onOpen(application)}>Edit</button>
     </article>)}</div>}
   </section>;
+}
+
+function LinkedInImport({onClose, onImported}: {onClose: () => void; onImported: () => void}) {
+  const [form, setForm] = useState({source_url:"", title:"", company:"", city:"", work_model:"", description:""});
+  const [state, setState] = useState<"idle"|"saving"|"created"|"existing"|"error">("idle");
+  const update = (field: keyof typeof form, value: string) => setForm((current) => ({...current,[field]:value}));
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setState("saving");
+    const response = await fetch(`${API_URL}/api/jobs/import/linkedin`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
+    if (!response.ok) { setState("error"); return; }
+    const result: {status:"created"|"existing";job_id:number} = await response.json();
+    setState(result.status); onImported();
+  }
+  return <div className="fixed inset-0 z-[60] bg-slate-950/60 backdrop-blur-sm" role="dialog" aria-modal="true" onMouseDown={onClose}>
+    <aside className="detail-panel ml-auto h-full w-full max-w-xl overflow-y-auto bg-paper p-6 text-slate-900 shadow-2xl md:p-10" onMouseDown={(event) => event.stopPropagation()}>
+      <button className="mb-8 font-mono text-xs uppercase tracking-widest text-slate-500 hover:text-slate-950" onClick={onClose}>← Close</button>
+      <p className="font-mono text-[10px] uppercase tracking-[.2em] text-teal-700">Manual import</p><h2 className="mt-2 text-3xl font-semibold">Import LinkedIn Job</h2>
+      <p className="mt-3 text-sm leading-6 text-slate-500">Add a public listing for review. JobHunter never logs in to LinkedIn or submits an application.</p>
+      <form className="tracking-form mt-8" onSubmit={(event) => void submit(event)}>
+        <label className="md:col-span-2">LinkedIn Job URL<input required type="url" placeholder="https://www.linkedin.com/jobs/view/1234567890/" value={form.source_url} onChange={(event) => update("source_url",event.target.value)} /></label>
+        <label>Title<input required value={form.title} onChange={(event) => update("title",event.target.value)} /></label><label>Company<input required value={form.company} onChange={(event) => update("company",event.target.value)} /></label>
+        <label>City<input value={form.city} onChange={(event) => update("city",event.target.value)} /></label><label>Work Model<select value={form.work_model} onChange={(event) => update("work_model",event.target.value)}><option value="">Unknown</option><option>Remote</option><option>Hybrid</option><option>On-site</option></select></label>
+        <label className="md:col-span-2">Description (optional)<textarea value={form.description} onChange={(event) => update("description",event.target.value)} /></label>
+        <div className="flex flex-wrap items-center gap-3 md:col-span-2"><button className="action-primary" disabled={state==="saving"}>{state==="saving"?"Adding…":"Add to JobHunter"}</button>{state==="created"&&<span className="text-sm text-teal-700">LinkedIn job added.</span>}{state==="existing"&&<span className="text-sm text-amber-700">This LinkedIn job is already in JobHunter.</span>}{state==="error"&&<span className="text-sm text-red-700">Check the LinkedIn job URL and required fields.</span>}</div>
+      </form>
+    </aside>
+  </div>;
 }
 
 function DetailSection({title, children}: {title: string; children: React.ReactNode}) {

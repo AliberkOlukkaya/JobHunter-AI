@@ -1,0 +1,285 @@
+[
+  {
+    "updatedAt": "2026-08-27T14:09:57.880Z",
+    "createdAt": "2026-08-27T14:05:53.713Z",
+    "id": "LinkedInAlertImport1",
+    "name": "JobHunter - LinkedIn Job Alert Import",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [0, 0],
+        "id": "linkedin-manual-trigger",
+        "name": "Manual/Test Trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "const jobs = [\n  ['Junior Data Engineer','Northstar Data','Ankara','https://www.linkedin.com/jobs/view/900000001/?trackingId=mock-1','Python SQL ETL data pipelines. 0-2 years.'],\n  ['Python Backend Developer','Bosporus Labs','Ä°stanbul','https://www.linkedin.com/jobs/view/python-backend-900000002/?refId=mock-2','Python FastAPI PostgreSQL Docker REST API. 1-2 years.'],\n  ['Machine Learning Engineer','Vision Works','Ä°stanbul','https://www.linkedin.com/jobs/view/900000003/?trackingId=mock-3','Python PyTorch machine learning. 5+ years required.'],\n  ['Data Analyst','Aegean Analytics','Ä°zmir','https://www.linkedin.com/jobs/view/900000004/?trk=mock-4','SQL Python pandas analytics. Entry level.'],\n  ['Software Engineer','Anatolia Software','Ankara','https://www.linkedin.com/jobs/view/software-engineer-900000005/?refId=mock-5','Software engineering with Python, Docker and REST API.'],\n  ['Senior Backend Engineer','Platform Co','Ä°stanbul','https://www.linkedin.com/jobs/view/900000006/?trackingId=mock-6','Senior backend role using Python and PostgreSQL.'],\n  ['Sales Specialist','Revenue Co','Ankara','https://www.linkedin.com/jobs/view/900000007/?refId=mock-7','Sales and account growth.'],\n  ['Customer Support Specialist','Service Co','Remote','https://www.linkedin.com/jobs/view/900000008/?trackingId=mock-8','Customer support for a software product.']\n].map(([title,company,location,url,description]) => ({title,company,location,url,description}));\nconst text = jobs.map(j => `${j.title} | ${j.company} | ${j.location} | ${j.url}`).join('\\n');\nconst html = jobs.map(j => `<a href=\"${j.url}\">${j.title}</a><span>${j.company}</span><span>${j.location}</span>`).join('');\nreturn [{json:{is_mock:true,mock_label:'LINKEDIN_JOB_ALERT_TEST_ONLY',subject:'Mock LinkedIn Job Alert',text,html,jobs}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [220, 0],
+        "id": "mock-linkedin-alert",
+        "name": "Mock LinkedIn Alert Email",
+        "notes": "Eight synthetic listings for workflow validation. Mock items must never be inserted into production jobs."
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [220, -180],
+        "id": "gmail-trigger-placeholder",
+        "name": "Gmail Trigger (Disabled Placeholder)",
+        "disabled": true,
+        "notes": "Replace with an authenticated Gmail Trigger after the user supplies credentials. No credential is embedded."
+      },
+      {
+        "parameters": {
+          "jsCode": "const email = $json;\nif (Array.isArray(email.jobs)) return email.jobs.map(job => ({json:{...job,is_mock:email.is_mock===true,mock_label:email.mock_label||null}}));\nconst text = String(email.text || email.textPlain || email.body || '');\nconst html = String(email.html || email.textHtml || '');\nconst rows = [];\nfor (const line of text.split(/\\r?\\n/)) {\n  const parts = line.split('|').map(v => v.trim());\n  if (parts.length >= 4 && /https:\\/\\/(?:www\\.)?linkedin\\.com\\/jobs\\/view\\//i.test(parts[3])) rows.push({title:parts[0],company:parts[1],location:parts[2],url:parts[3],description:''});\n}\nif (!rows.length) {\n  const anchors = [...html.matchAll(/<a[^>]+href=[\"']([^\"']*linkedin\\.com\\/jobs\\/view\\/[^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi)];\n  for (const match of anchors) rows.push({title:match[2].replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim(),company:'Unknown',location:'',url:match[1].replace(/&amp;/g,'&'),description:''});\n}\nreturn rows.map(job => ({json:{...job,is_mock:false,mock_label:null}}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 0],
+        "id": "extract-linkedin-jobs",
+        "name": "Extract LinkedIn Jobs"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const raw = String($json.url || '').trim();\nconst idMatch = raw.match(/linkedin\\.com\\/jobs\\/view\\/[^?#]*?(\\d+)(?:[/?#]|$)/i);\nconst queryMatch = raw.match(/[?&]currentJobId=(\\d+)/i);\nconst external = idMatch?.[1] || queryMatch?.[1] || null;\nconst pathMatch = raw.match(/https:\\/\\/(?:www\\.)?linkedin\\.com(\\/jobs\\/view\\/[^?#]+)/i);\nconst canonical = external ? `https://www.linkedin.com/jobs/view/${external}/` : pathMatch ? `https://www.linkedin.com${pathMatch[1].replace(/\\/+$/,'')}/` : raw;\nconst title=String($json.title||'').trim(), description=String($json.description||'').trim();\nconst combined=`${title} ${description}`;\nconst exp=[...new Set(combined.match(/\\b(?:(?:minimum(?:\\s+of)?|at\\s+least)\\s+)?\\d+\\s*(?:\\+|[-â€“â€”]\\s*\\d+)?\\s*(?:years?|yrs?)\\b/gi)||[])].join('; ');\nconst role=/\\b(?:machine learning engineer|ml engineer|ai engineer|artificial intelligence engineer|junior ai engineer|junior machine learning engineer|data scientist|junior data scientist)\\b/i.test(title)?'ai_ml':/\\b(?:data engineer|junior data engineer|analytics engineer|data analyst|junior data analyst|business intelligence|bi developer|etl developer|data platform engineer)\\b/i.test(title)?'data':/\\b(?:python developer|python engineer|backend developer|backend engineer|back-end developer|back-end engineer|fastapi developer)\\b/i.test(title)?'backend':/\\b(?:software engineer|software developer|junior software engineer|junior software developer|graduate software engineer)\\b/i.test(title)?'software':'unknown';\nreturn {json:{title,company:String($json.company||'Unknown').trim(),city:String($json.location||'').trim()||null,work_model:/remote/i.test(combined+' '+($json.location||''))?'Remote':'On-site/Unknown',source:'LinkedIn',source_url:canonical,external_job_id:external,description:description||null,posted_at:null,career_level:/\\b(junior|entry[\\s-]?level|graduate|new[\\s-]?grad|trainee|intern(?:ship)?|associate)\\b/i.test(title)?'junior':'unknown',experience_text:exp,role_category:role,is_mock:$json.is_mock===true,mock_label:$json.mock_label||null}};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [700, 0],
+        "id": "normalize-linkedin-fields",
+        "name": "Normalize Fields"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "linkedin-seniority-condition",
+                "leftValue": "={{ !/(?:\\bsenior\\b|\\bsr\\.?(?=\\s|$)|\\bstaff\\b|\\blead\\b|\\bprincipal\\b|\\bmanager\\b|\\bdirector\\b|\\bhead\\s+of\\b|\\barchitect\\b|\\bexpert\\b|\\bvp\\b|\\bvice\\s+president\\b)/i.test($json.title || '') }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.2,
+        "position": [940, 0],
+        "id": "filter-linkedin-seniority",
+        "name": "Filter Seniority"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "linkedin-experience-condition",
+                "leftValue": "={{ !/(?:\\b(?:[5-9]|[1-9]\\d+)\\s*\\+\\s*(?:years?|yrs?)\\b|\\b(?:minimum(?:\\s+of)?|at\\s+least)\\s+(?:[5-9]|[1-9]\\d+)\\s*(?:years?|yrs?)\\b|\\b(?:[5-9]|[1-9]\\d+)\\s*[-â€“â€”]\\s*\\d+\\s*(?:years?|yrs?)\\b)/i.test($json.experience_text || '') }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.2,
+        "position": [1180, 0],
+        "id": "filter-linkedin-experience",
+        "name": "Filter Experience"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "linkedin-relevance-condition",
+                "leftValue": "={{ !/\\b(?:office assistant|virtual assistant|customer support|product support|technical support|content reviewer|content moderator|data labeling|data annotation|annotator|collection|sales|marketing|recruiter|human resources|account manager|customer success|graphic designer|seo|copywriter)\\b/i.test($json.title || '') && ($json.role_category !== 'unknown' || (/\\b(?:engineer|developer|programmer)\\b/i.test($json.title || '') && [...new Set((($json.description || '').toLowerCase().match(/\\b(?:python|sql|postgresql|fastapi|pandas|numpy|machine learning|pytorch|tensorflow|etl|airflow|spark|docker|rest api|backend|data pipeline)\\b/g) || []))].length >= 2)) }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2.2,
+        "position": [1420, 0],
+        "id": "filter-linkedin-relevant",
+        "name": "Filter Relevant Jobs"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "linkedin-mock-safety",
+                "leftValue": "={{ $json.is_mock !== true }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [1660, 0],
+        "id": "mock-safety-gate",
+        "name": "Production Insert?"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.jobs (title, company, city, work_model, source, source_url, external_job_id, description, posted_at)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz)\nON CONFLICT DO NOTHING\nRETURNING id, title, company, city, source, source_url;",
+          "options": {
+            "queryReplacement": "={{ [$json.title, $json.company, $json.city, $json.work_model, $json.source, $json.source_url, $json.external_job_id, $json.description, $json.posted_at] }}"
+          }
+        },
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.7,
+        "position": [1900, -80],
+        "id": "insert-linkedin-jobs",
+        "name": "Insert New Jobs",
+        "credentials": {
+          "postgres": { "id": "axBibQduKywez80n", "name": "Postgres account" }
+        }
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [1900, 100],
+        "id": "mock-accepted-output",
+        "name": "Mock Accepted (No Insert)",
+        "notes": "Terminal mock-test output. Deliberately does not write to PostgreSQL."
+      }
+    ],
+    "connections": {
+      "Manual/Test Trigger": {
+        "main": [
+          [{ "node": "Mock LinkedIn Alert Email", "type": "main", "index": 0 }]
+        ]
+      },
+      "Mock LinkedIn Alert Email": {
+        "main": [
+          [{ "node": "Extract LinkedIn Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Gmail Trigger (Disabled Placeholder)": {
+        "main": [
+          [{ "node": "Extract LinkedIn Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Extract LinkedIn Jobs": {
+        "main": [[{ "node": "Normalize Fields", "type": "main", "index": 0 }]]
+      },
+      "Normalize Fields": {
+        "main": [[{ "node": "Filter Seniority", "type": "main", "index": 0 }]]
+      },
+      "Filter Seniority": {
+        "main": [[{ "node": "Filter Experience", "type": "main", "index": 0 }]]
+      },
+      "Filter Experience": {
+        "main": [
+          [{ "node": "Filter Relevant Jobs", "type": "main", "index": 0 }]
+        ]
+      },
+      "Filter Relevant Jobs": {
+        "main": [[{ "node": "Production Insert?", "type": "main", "index": 0 }]]
+      },
+      "Production Insert?": {
+        "main": [
+          [{ "node": "Insert New Jobs", "type": "main", "index": 0 }],
+          [{ "node": "Mock Accepted (No Insert)", "type": "main", "index": 0 }]
+        ]
+      }
+    },
+    "settings": { "executionOrder": "v1", "timezone": "Europe/Istanbul" },
+    "staticData": null,
+    "meta": null,
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "2ca0cb98-0a8e-4c1b-ade1-3589f03fbafe",
+    "activeVersionId": null,
+    "versionCounter": 3,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-08-27T14:05:53.713Z",
+        "createdAt": "2026-08-27T14:05:53.713Z",
+        "role": "workflow:owner",
+        "workflowId": "LinkedInAlertImport1",
+        "projectId": "42IjbYSnuzn0Glt0",
+        "project": {
+          "updatedAt": "2026-08-26T11:24:11.062Z",
+          "createdAt": "2026-08-26T11:23:24.390Z",
+          "id": "42IjbYSnuzn0Glt0",
+          "name": "aliberk olukkaya <aliberk1282@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "9657b503-8fae-409e-920a-733dd623beb1"
+        }
+      }
+    ],
+    "versionMetadata": { "name": null, "description": null }
+  }
+]

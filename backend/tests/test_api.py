@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+from app.linkedin import canonicalize_linkedin_job_url
 from app.models import DailyDigest, Job
 
 
@@ -141,3 +142,50 @@ def test_application_stats():
     assert response.status_code == 200
     assert response.json()["interview"] == 1
     assert response.json()["saved"] == 0
+
+
+def test_valid_linkedin_import():
+    response = client.post("/api/jobs/import/linkedin", json={
+        "source_url": "https://www.linkedin.com/jobs/view/junior-data-engineer-1234567890/?trackingId=secret-tracker&refId=alert",
+        "title": "Junior Data Engineer",
+        "company": "LinkedIn Test Company",
+        "city": "Ankara",
+        "work_model": "Hybrid",
+    })
+    assert response.status_code == 200
+    assert response.json()["status"] == "created"
+    job = client.get(f"/api/jobs/{response.json()['job_id']}").json()
+    assert job["source"] == "LinkedIn"
+    assert job["match_score"] is None
+    assert job["source_url"] == "https://www.linkedin.com/jobs/view/1234567890/"
+
+
+def test_invalid_non_linkedin_url_rejection():
+    response = client.post("/api/jobs/import/linkedin", json={
+        "source_url": "https://example.com/jobs/view/1234567890/",
+        "title": "Data Engineer",
+        "company": "Example",
+    })
+    assert response.status_code == 422
+
+
+def test_duplicate_linkedin_import():
+    response = client.post("/api/jobs/import/linkedin", json={
+        "source_url": "https://linkedin.com/jobs/view/1234567890/?utm_source=email",
+        "title": "Same Job",
+        "company": "Same Company",
+    })
+    assert response.status_code == 200
+    assert response.json()["status"] == "existing"
+
+
+def test_linkedin_external_job_id_extraction():
+    canonical, job_id = canonicalize_linkedin_job_url("https://www.linkedin.com/jobs/view/platform-engineer-99887766/")
+    assert job_id == "99887766"
+    assert canonical.endswith("/jobs/view/99887766/")
+
+
+def test_linkedin_canonical_url_behavior():
+    canonical, job_id = canonicalize_linkedin_job_url("https://www.linkedin.com/jobs/view/data-role/?currentJobId=445566&trackingId=abc")
+    assert canonical == "https://www.linkedin.com/jobs/view/445566/"
+    assert job_id == "445566"

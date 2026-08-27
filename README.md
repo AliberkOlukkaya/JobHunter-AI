@@ -8,7 +8,10 @@ JobHunter AI collects job listings from multiple sources, applies deterministic 
 
 ## Features
 
-- Multi-source ingestion with Jooble and Remotive
+- Multi-source ingestion with Jooble, Remotive, and safe LinkedIn imports
+- LinkedIn job import through the dashboard
+- LinkedIn Job Alert email ingestion workflow, ready for a user-supplied Gmail credential
+- User-controlled LinkedIn approval and manual application handoff
 - Turkey city and role searches through Jooble
 - Remote job discovery through Remotive
 - Seniority, experience, and high-precision relevance filtering
@@ -22,22 +25,28 @@ JobHunter AI collects job listings from multiple sources, applies deterministic 
 ## Architecture
 
 ```text
-Jooble / Remotive
-       |
-       v
-      n8n
-       |
-       v
-Filtering + AI Scoring
-       |
-       v
-PostgreSQL
-   |            |
-   v            v
-FastAPI    Daily Automation
-   |
-   v
-Next.js Dashboard
+Jooble --------\
+Remotive -------+--> n8n
+LinkedIn Alerts-/      |
+                       v
+              Filtering + AI Ranking
+                       |
+                       v
+                  PostgreSQL
+                  /        \
+             FastAPI    Daily Digest
+                |
+                v
+        Next.js Dashboard
+                |
+                v
+        User Approves Job
+                |
+                v
+      Open Original Listing
+                |
+                v
+       Manual Application
 ```
 
 ## Tech Stack
@@ -99,6 +108,7 @@ Real values belong only in the ignored `.env` file.
 - **Jooble Turkey Ingestion** searches configured Turkish cities and roles.
 - **AI Job Scoring** uses Gemini, then OpenAI, then deterministic fallback and shared validation.
 - **Daily Automation** runs ingestion and scoring workflows and stores a daily digest.
+- **LinkedIn Job Alert Import** parses alert email text or HTML, canonicalizes listing URLs, applies the shared filters, and blocks mock data from production inserts. Its Gmail trigger placeholder is disabled until the user connects a credential.
 
 Workflow exports are stored in [`automation/`](automation/).
 
@@ -106,9 +116,13 @@ Workflow exports are stored in [`automation/`](automation/).
 
 Each job can have one application record with one of these statuses: `saved`, `ready_to_apply`, `applied`, `interview`, `rejected`, `offer`, or `withdrawn`. Notes and optional follow-up dates are editable in the dashboard. The platform does not log in to job sites or submit applications.
 
+LinkedIn manual dashboard import is ready. LinkedIn job-alert email ingestion becomes available after a Gmail credential is connected to the disabled trigger placeholder. Approving a LinkedIn job only sets it to `ready_to_apply`; it does not submit anything.
+
+JobHunter AI discovers, ranks, and prepares jobs for review. Final applications are always submitted manually by the user.
+
 ## Current Limitations
 
-- LinkedIn scraping and browser automation are intentionally not included.
+- LinkedIn browser scraping, login automation, and automated Easy Apply are intentionally not included.
 - Jooble requires a user-provided API key.
 - Gemini and OpenAI scoring require valid provider access.
 - Deterministic scoring is used when AI providers are unavailable.
