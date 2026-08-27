@@ -10,6 +10,7 @@ type Job = {
   work_model: string | null;
   source: string | null;
   source_url: string | null;
+  external_job_id: string | null;
   description: string | null;
   posted_at: string | null;
   match_score: number | null;
@@ -101,6 +102,10 @@ function canResolveListing(job: Job) {
   return job.source?.toLowerCase() === "jooble" || Boolean(validListingUrl(job.source_url));
 }
 
+function isMockJoobleListing(job: Job) {
+  return job.source?.toLowerCase() === "jooble" && (job.external_job_id?.startsWith("jooble-tr-") || job.source_url?.includes("/mock-"));
+}
+
 export default function Dashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -116,13 +121,14 @@ export default function Dashboard() {
   const [applicationFilter, setApplicationFilter] = useState<"all" | ApplicationStatus>("all");
   const [savingJobId, setSavingJobId] = useState<number | null>(null);
   const [openingJobId, setOpeningJobId] = useState<number | null>(null);
+  const [linkNotices, setLinkNotices] = useState<Record<number, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
 
   const applicationByJob = useMemo(() => new Map(applications.map((item) => [item.job_id, item])), [applications]);
   const visibleApplications = useMemo(() => applicationFilter === "all" ? applications : applications.filter((item) => item.status === applicationFilter), [applications, applicationFilter]);
-  const visibleJobs = useMemo(() => jobs.filter((job) => !dismissedIds.has(job.id)), [jobs, dismissedIds]);
+  const visibleJobs = useMemo(() => jobs.filter((job) => !dismissedIds.has(job.id) && !isMockJoobleListing(job)), [jobs, dismissedIds]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ limit: "50" });
@@ -202,6 +208,7 @@ export default function Dashboard() {
   async function openJob(job: Job) {
     setOpeningJobId(job.id);
     setActionError(null);
+    setLinkNotices((current) => ({...current, [job.id]: ""}));
     const popup = window.open("about:blank", "_blank");
     if (popup) popup.opener = null;
     try {
@@ -211,7 +218,7 @@ export default function Dashboard() {
       const resolvedUrl = validListingUrl(result.url);
       if (result.status !== "resolved" || !resolvedUrl) {
         popup?.close();
-        setActionError(job.source?.toLowerCase() === "jooble" ? "This listing is no longer available on Jooble." : "This listing is no longer available.");
+        setLinkNotices((current) => ({...current, [job.id]: job.source?.toLowerCase() === "jooble" ? "This listing is no longer available on Jooble." : "This listing is no longer available."}));
         return;
       }
       if (popup) {
@@ -225,7 +232,7 @@ export default function Dashboard() {
       }
     } catch {
       popup?.close();
-      setActionError("The listing link could not be checked. Please try again.");
+      setLinkNotices((current) => ({...current, [job.id]: "The listing link could not be checked. Please try again."}));
     } finally {
       setOpeningJobId(null);
     }
@@ -329,10 +336,13 @@ export default function Dashboard() {
                   {job.matched_skills.length > 0 && <p className="mt-2 text-xs text-teal-700">{job.matched_skills.slice(0,4).join(" · ")}{job.matched_skills.length > 4 ? ` · +${job.matched_skills.length-4}` : ""}</p>}
                   <div className="mt-2 flex flex-wrap items-center gap-2"><span className={`recommendation recommendation-${job.ai_recommendation ?? "unknown"}`}>{label(job.ai_recommendation)}</span>{applicationByJob.get(job.id) && <span className="application-current text-left">Application: {label(applicationByJob.get(job.id)!.status)}</span>}</div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 md:min-w-[260px]">
-                  <button className="action-primary" onClick={() => { setSelectedId(job.id); setSelectedJob(job); }}>View</button>
-                  {applicationByJob.get(job.id)?.status === "applied" ? <span className="quick-action active text-center">Applied</span> : <button disabled={savingJobId === job.id || applicationByJob.get(job.id)?.status === "ready_to_apply"} className="quick-action" onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>Ready</button>}
-                  {canResolveListing(job) ? <button className="action-secondary" disabled={openingJobId === job.id} onClick={() => void openJob(job)}>{openingJobId === job.id ? "Opening..." : "Open Job"}</button> : !job.source_url ? <button className="action-secondary" disabled>Open Job</button> : null}
+                <div className="md:min-w-[260px]">
+                  <div className="grid grid-cols-3 gap-2">
+                    <button className="action-primary" onClick={() => { setSelectedId(job.id); setSelectedJob(job); }}>View</button>
+                    {applicationByJob.get(job.id)?.status === "applied" ? <span className="quick-action active text-center">Applied</span> : <button disabled={savingJobId === job.id || applicationByJob.get(job.id)?.status === "ready_to_apply"} className="quick-action" onClick={() => void setApplicationStatus(job.id,"ready_to_apply")}>Ready</button>}
+                    {canResolveListing(job) ? <button className="action-secondary" disabled={openingJobId === job.id} onClick={() => void openJob(job)}>{openingJobId === job.id ? "Opening..." : "Open Job"}</button> : !job.source_url ? <button className="action-secondary" disabled>Open Job</button> : null}
+                  </div>
+                  {linkNotices[job.id] && <p className="mt-2 text-xs text-amber-700" role="status">{linkNotices[job.id]}</p>}
                 </div>
               </article>
             ))}
@@ -342,7 +352,7 @@ export default function Dashboard() {
         {activeView === "applications" && <ApplicationsView applications={visibleApplications} filter={applicationFilter} onFilter={setApplicationFilter} onOpen={(application) => { setSelectedId(application.job_id); setSelectedJob(null); }} />}
       </div>
 
-      {selectedId !== null && <JobDetail job={selectedJob} application={applicationByJob.get(selectedId) ?? null} opening={openingJobId === selectedId} onOpenJob={openJob} onSaved={storeApplication} onDismiss={() => { dismissJob(selectedId); setSelectedId(null); setSelectedJob(null); }} onClose={() => { setSelectedId(null); setSelectedJob(null); }} />}
+      {selectedId !== null && <JobDetail job={selectedJob} application={applicationByJob.get(selectedId) ?? null} opening={openingJobId === selectedId} linkNotice={linkNotices[selectedId]} onOpenJob={openJob} onSaved={storeApplication} onDismiss={() => { dismissJob(selectedId); setSelectedId(null); setSelectedJob(null); }} onClose={() => { setSelectedId(null); setSelectedJob(null); }} />}
       {importOpen && <LinkedInImport onClose={() => setImportOpen(false)} onImported={() => void loadDashboard()} />}
     </main>
   );
@@ -352,7 +362,7 @@ function Status({message, action, onAction}: {message: string; action?: string; 
   return <div className="flex min-h-[240px] flex-col items-center justify-center gap-4 text-sm text-slate-500"><span>{message}</span>{action && <button className="action-primary" onClick={onAction}>{action}</button>}</div>;
 }
 
-function JobDetail({job, application, opening, onOpenJob, onSaved, onDismiss, onClose}: {job: Job | null; application: Application | null; opening: boolean; onOpenJob: (job: Job) => Promise<void>; onSaved: (value: Application) => void; onDismiss: () => void; onClose: () => void}) {
+function JobDetail({job, application, opening, linkNotice, onOpenJob, onSaved, onDismiss, onClose}: {job: Job | null; application: Application | null; opening: boolean; linkNotice?: string; onOpenJob: (job: Job) => Promise<void>; onSaved: (value: Application) => void; onDismiss: () => void; onClose: () => void}) {
   const [status, setStatus] = useState<ApplicationStatus>(application?.status ?? "saved");
   const [notes, setNotes] = useState(application?.notes ?? "");
   const [followUp, setFollowUp] = useState(application?.follow_up_at?.slice(0, 10) ?? "");
@@ -395,6 +405,7 @@ function JobDetail({job, application, opening, onOpenJob, onSaved, onDismiss, on
           </DetailSection>
           <DetailSection title="Job Description"><p className="whitespace-pre-wrap leading-7 text-slate-600">{job.description ?? "No description available."}</p></DetailSection>
           <div className="mt-8 flex flex-wrap items-center gap-3">{canResolveListing(job) && <button className="action-primary inline-flex" disabled={opening} onClick={() => void onOpenJob(job)}>{opening ? "Opening..." : "Open Job ↗"}</button>}<button className="action-secondary" onClick={onDismiss}>Hide from list</button></div>
+          {linkNotice && <p className="mt-3 text-sm text-amber-700" role="status">{linkNotice}</p>}
         </>}
       </aside>
     </div>
